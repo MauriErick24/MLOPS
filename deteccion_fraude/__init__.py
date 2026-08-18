@@ -1,1 +1,5 @@
-from deteccion_fraude import config  # noqa: F401
+"""Detección de fraude con una arquitectura orientada a objetos."""
+
+from deteccion_fraude.config import ExperimentConfig
+
+__all__ = ["ExperimentConfig"]
