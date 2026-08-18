@@ -1,0 +1,12 @@
+imbalanced-learn
+ipykernel
+matplotlib
+numpy
+pandas
+pytest
+pytorch-tabnet
+scikit-learn
+scipy
+seaborn
+tensorflow
+torch
