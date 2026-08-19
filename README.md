@@ -1,3 +1,11 @@
+# Integrantes
+ - Vera Vargas Ariel Leandro 
+ - Vilela Montoya María Fernanda
+ - Molina Beltran Mauricio Erick
+ - Roque Cerrogrande Edwin
+ - Trujillo Montan Omar
+ - Huanca Maldonado Rodrigo
+
 # deteccion_fraude
 
 <a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
