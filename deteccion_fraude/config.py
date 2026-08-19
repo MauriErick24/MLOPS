@@ -28,7 +28,7 @@ except ModuleNotFoundError:
 class ExperimentConfig:
     """Parametros inmutables y reproducibles del experimento."""
 
-    data_file: Path = RAW_DATA_DIR / "dataset.csv"
+    data_file: Path = RAW_DATA_DIR / "creditcard.csv"
     models_dir: Path = MODELS_DIR
     figures_dir: Path = FIGURES_DIR
     random_state: int = 42

@@ -1,23 +1,19 @@
-from pathlib import Path
-
 from loguru import logger
 import typer
 
-from deteccion_fraude.config import RAW_DATA_DIR, ExperimentConfig
+from deteccion_fraude.config import ExperimentConfig
 
 app = typer.Typer()
 
 
 @app.command()
-def main(
-    data_path: Path = RAW_DATA_DIR / "dataset.csv",
-):
+def main():
     from deteccion_fraude.dataset import FraudDataset
     from deteccion_fraude.features import FraudPreprocessor
     from deteccion_fraude.modeling.pipeline import FraudDetectionPipeline
 
     config = ExperimentConfig()
-    df = FraudDataset.load(data_path)
+    df = FraudDataset.load(config.data_file)
     splits = FraudDataset.split(df, config)
     preprocessor = FraudPreprocessor(config)
     data = preprocessor.fit_transform(splits)
