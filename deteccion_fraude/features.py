@@ -1,14 +1,15 @@
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from imblearn.over_sampling import SMOTE
 from loguru import logger
 import numpy as np
 import pandas as pd
+from scipy import stats as st
 from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
 import typer
 
-from deteccion_fraude.config import PROCESSED_DATA_DIR, ExperimentConfig
+from deteccion_fraude.config import ExperimentConfig
 
 if TYPE_CHECKING:
     from deteccion_fraude.dataset import DatasetSplits, PreparedData
@@ -22,40 +23,39 @@ class FraudFeatureEngineer:
     def __init__(self, config: ExperimentConfig) -> None:
         self.config = config
 
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Aplica feature engineering sin mutar el input."""
-        df = df.copy()
-        v_cols = [f"V{i}" for i in range(1, 29)]
+        df = dataframe.copy()
+        v_columns = self.config.pca_columns
 
         df["Amount_log"] = np.log1p(df["Amount"])
         df["Amount_log_cat"] = pd.cut(np.log1p(df["Amount"]), bins=10, labels=False).astype(float)
-        df["Amount_zscore"] = np.abs(df["Amount"] - df["Amount"].mean()) / (
-            df["Amount"].std() + 1e-6
-        )
+        df["Amount_zscore"] = np.abs(st.zscore(df["Amount"]))
 
         df["Time_hour"] = (df["Time"] / 3600) % 24
         df["Transaction_frequency"] = df.groupby("Time_hour")["Time_hour"].transform("count")
 
-        df["Amount_roll_mean_5"] = df["Amount"].rolling(window=5, min_periods=1).mean()
-        df["Amount_roll_std_5"] = df["Amount"].rolling(window=5, min_periods=1).std().fillna(0)
-        df["Amount_roll_mean_10"] = df["Amount"].rolling(window=10, min_periods=1).mean()
-        df["Amount_roll_ratio"] = df["Amount"] / (df["Amount_roll_mean_5"] + 1e-6)
+        amount = df["Amount"]
+        df["Amount_roll_mean_5"] = amount.rolling(5, min_periods=1).mean()
+        df["Amount_roll_std_5"] = amount.rolling(5, min_periods=1).std().fillna(0)
+        df["Amount_roll_mean_10"] = amount.rolling(10, min_periods=1).mean()
+        df["Amount_roll_ratio"] = amount / (df["Amount_roll_mean_5"] + 1e-6)
 
-        df["V_mean"] = df[v_cols].mean(axis=1)
-        df["V_std"] = df[v_cols].std(axis=1)
-        df["V_max"] = df[v_cols].max(axis=1)
-        df["V_min"] = df[v_cols].min(axis=1)
-        df["V_median"] = df[v_cols].median(axis=1)
-        df["V_abs_sum"] = df[v_cols].abs().sum(axis=1)
-        df["V_count_neg"] = (df[v_cols] < 0).sum(axis=1)
-        df["V_count_pos"] = (df[v_cols] > 0).sum(axis=1)
+        df["V_mean"] = df[v_columns].mean(axis=1)
+        df["V_std"] = df[v_columns].std(axis=1)
+        df["V_max"] = df[v_columns].max(axis=1)
+        df["V_min"] = df[v_columns].min(axis=1)
+        df["V_median"] = df[v_columns].median(axis=1)
+        df["V_abs_sum"] = df[v_columns].abs().sum(axis=1)
+        df["V_count_neg"] = (df[v_columns] < 0).sum(axis=1)
+        df["V_count_pos"] = (df[v_columns] > 0).sum(axis=1)
 
         df["V1_V2_ratio"] = df["V1"] / (df["V2"].abs() + 1e-6)
         df["V3_V4_ratio"] = df["V3"] / (df["V4"].abs() + 1e-6)
         df["V12_V14_ratio"] = df["V12"] / (df["V14"].abs() + 1e-6)
 
-        df["Amount_V_ratio"] = df["Amount"] / (df["V_mean"].abs() + 1e-6)
-        df["Amount_V_std_ratio"] = df["Amount"] / (df["V_std"] + 1e-6)
+        df["Amount_V_ratio"] = amount / (np.abs(df["V_mean"]) + 1e-6)
+        df["Amount_V_std_ratio"] = amount / (df["V_std"] + 1e-6)
 
         df = df.dropna().reset_index(drop=True)
         return df
@@ -79,24 +79,15 @@ class FraudPreprocessor:
         robust_scaler = RobustScaler()
         standard_scaler = StandardScaler()
 
-        df_train[self.config.robust_columns] = robust_scaler.fit_transform(
-            df_train[self.config.robust_columns]
-        )
-        df_train[self.config.standard_columns] = standard_scaler.fit_transform(
-            df_train[self.config.standard_columns]
-        )
-        df_val[self.config.robust_columns] = robust_scaler.transform(
-            df_val[self.config.robust_columns]
-        )
-        df_val[self.config.standard_columns] = standard_scaler.transform(
-            df_val[self.config.standard_columns]
-        )
-        df_test[self.config.robust_columns] = robust_scaler.transform(
-            df_test[self.config.robust_columns]
-        )
-        df_test[self.config.standard_columns] = standard_scaler.transform(
-            df_test[self.config.standard_columns]
-        )
+        robust = self.config.robust_columns
+        standard = self.config.standard_columns
+
+        df_train[robust] = robust_scaler.fit_transform(df_train[robust])
+        df_train[standard] = standard_scaler.fit_transform(df_train[standard])
+        df_val[robust] = robust_scaler.transform(df_val[robust])
+        df_val[standard] = standard_scaler.transform(df_val[standard])
+        df_test[robust] = robust_scaler.transform(df_test[robust])
+        df_test[standard] = standard_scaler.transform(df_test[standard])
 
         feature_cols = self.config.feature_columns
         X_train = df_train[feature_cols].values
@@ -112,8 +103,8 @@ class FraudPreprocessor:
         )
         X_balanced, y_balanced = smote.fit_resample(X_train, y_train)
 
-        unique, counts = np.unique(y_train, return_counts=True)
-        class_weights = dict(zip(unique.astype(int), (1.0 / counts) * counts.sum() / 2.0))
+        weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
+        class_weights = dict(zip(np.unique(y_train).astype(int), weights))
 
         logger.info(
             f"PreparedData — train: {X_train.shape}, val: {X_val.shape}, test: {X_test.shape}"
@@ -137,22 +128,3 @@ class FraudPreprocessor:
             robust_scaler=robust_scaler,
             standard_scaler=standard_scaler,
         )
-
-
-@app.command()
-def main(
-    input_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "features.csv",
-):
-    from deteccion_fraude.dataset import FraudDataset
-
-    config = ExperimentConfig()
-    df = FraudDataset.load(input_path)
-    splits = FraudDataset.split(df, config)
-    preprocessor = FraudPreprocessor(config)
-    data = preprocessor.fit_transform(splits)
-    logger.success(f"Features generadas: {len(data.feature_names)} columnas")
-
-
-if __name__ == "__main__":
-    app()

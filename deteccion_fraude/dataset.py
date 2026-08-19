@@ -1,15 +1,10 @@
 from dataclasses import dataclass
-from pathlib import Path
 
-from loguru import logger
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import typer
 
-from deteccion_fraude.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, ExperimentConfig
-
-app = typer.Typer()
+from deteccion_fraude.config import ExperimentConfig
 
 
 @dataclass
@@ -63,20 +58,33 @@ class PreparedData:
 class FraudDataset:
     """Carga, limpieza y particion del dataset."""
 
+    REQUIRED_COLUMNS = {"Time", "Amount", "Class"} | {f"V{i}" for i in range(1, 29)}
+
     @staticmethod
-    def load(path: Path) -> pd.DataFrame:
+    def load(path) -> pd.DataFrame:
         """Lee CSV, elimina nulos y duplicados."""
+        from loguru import logger
+
         logger.info(f"Cargando dataset desde {path}")
         df = pd.read_csv(path)
+        missing = FraudDataset.REQUIRED_COLUMNS.difference(df.columns)
+        if missing:
+            raise ValueError(f"Faltan columnas obligatorias: {sorted(missing)}")
         logger.info(f"Shape original: {df.shape}")
-        df = df.dropna().reset_index(drop=True)
-        df = df.drop_duplicates().reset_index(drop=True)
+        df = FraudDataset.clean(df)
         logger.info(f"Shape tras limpieza: {df.shape}")
         return df
 
     @staticmethod
+    def clean(dataframe: pd.DataFrame) -> pd.DataFrame:
+        """Elimina nulos y duplicados exactos sin modificar el input."""
+        return dataframe.dropna().drop_duplicates().reset_index(drop=True)
+
+    @staticmethod
     def split(df: pd.DataFrame, config: ExperimentConfig) -> DatasetSplits:
         """Particion estratificada 70/15/15 ordenada por Time."""
+        from loguru import logger
+
         df_train, df_temp = train_test_split(
             df, test_size=0.30, random_state=config.random_state, stratify=df["Class"]
         )
@@ -88,20 +96,3 @@ class FraudDataset:
         df_test = df_test.sort_values("Time").reset_index(drop=True)
         logger.info(f"Splits — train: {len(df_train)}, val: {len(df_val)}, test: {len(df_test)}")
         return DatasetSplits(df_train=df_train, df_val=df_val, df_test=df_test)
-
-
-@app.command()
-def main(
-    input_path: Path = RAW_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
-):
-    config = ExperimentConfig()
-    df = FraudDataset.load(input_path)
-    splits = FraudDataset.split(df, config)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.concat([splits.df_train, splits.df_val, splits.df_test]).to_csv(output_path, index=False)
-    logger.success("Dataset cargado y particionado.")
-
-
-if __name__ == "__main__":
-    app()
