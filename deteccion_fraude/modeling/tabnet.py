@@ -1,11 +1,11 @@
 """Modelo TabNet final."""
 
-import time
 from pathlib import Path
+import time
 
 import numpy as np
-import torch
 from pytorch_tabnet.tab_model import TabNetClassifier
+import torch
 
 from deteccion_fraude.config import ExperimentConfig
 from deteccion_fraude.dataset import PreparedData

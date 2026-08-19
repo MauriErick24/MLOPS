@@ -61,9 +61,7 @@ class FraudDetectionPipeline:
             threshold, _ = self.evaluator.find_best_threshold(
                 y_validation, self.validation_scores[name]
             )
-            result = self.evaluator.evaluate(
-                y_test, self.test_scores[name], name, threshold
-            )
+            result = self.evaluator.evaluate(y_test, self.test_scores[name], name, threshold)
             result["theoretical_best_f1"] = self.evaluator.theoretical_best_f1(
                 y_test, self.test_scores[name]
             )

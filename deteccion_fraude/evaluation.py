@@ -21,19 +21,14 @@ class FraudModelEvaluator:
     def __init__(self, config: ExperimentConfig) -> None:
         self.config = config
 
-    def find_best_threshold(
-        self, y_true: np.ndarray, scores: np.ndarray
-    ) -> tuple[float, float]:
+    def find_best_threshold(self, y_true: np.ndarray, scores: np.ndarray) -> tuple[float, float]:
         """Maximiza el ROI usando validación, nunca el conjunto de prueba."""
         best_roi, best_threshold = -np.inf, 0.5
         for threshold in np.arange(0.05, 0.9, 0.002):
             prediction = (scores > threshold).astype(int)
             _, fp, fn, tp = confusion_matrix(y_true, prediction).ravel()
             savings = tp * self.config.false_negative_cost
-            costs = (
-                fn * self.config.false_negative_cost
-                + fp * self.config.false_positive_cost
-            )
+            costs = fn * self.config.false_negative_cost + fp * self.config.false_positive_cost
             roi = (savings - costs) / (costs + 1e-10) * 100
             if roi > best_roi:
                 best_roi, best_threshold = roi, threshold

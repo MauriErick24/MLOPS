@@ -1,11 +1,11 @@
 """Modelo LSTM para ventanas de transacciones."""
 
-import time
 from pathlib import Path
+import time
 
+from imblearn.over_sampling import SMOTE
 import numpy as np
 import tensorflow as tf
-from imblearn.over_sampling import SMOTE
 from tensorflow.keras import backend as K
 
 from deteccion_fraude.config import ExperimentConfig
@@ -27,9 +27,7 @@ class FocalLoss(tf.keras.losses.Loss):
         probability = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
         alpha = tf.where(tf.equal(y_true, 1), self.alpha, 1 - self.alpha)
         focal_weight = alpha * K.pow(1.0 - probability, self.gamma)
-        cross_entropy = (
-            -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
-        )
+        cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
         return K.mean(focal_weight * cross_entropy)
 
     def get_config(self) -> dict:
@@ -53,9 +51,7 @@ class LSTMDetector:
         model = tf.keras.Sequential(
             [
                 tf.keras.layers.Input(shape=(sequence_length, n_features)),
-                tf.keras.layers.Bidirectional(
-                    tf.keras.layers.LSTM(64, return_sequences=True)
-                ),
+                tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True)),
                 tf.keras.layers.Dropout(0.4),
                 tf.keras.layers.BatchNormalization(),
                 tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(32)),
@@ -79,9 +75,7 @@ class LSTMDetector:
 
     def fit(self, data: PreparedData) -> "LSTMDetector":
         length = self.config.sequence_length
-        train_X, train_y = self.create_sequences(
-            data.X_train_lstm, data.y_train, length
-        )
+        train_X, train_y = self.create_sequences(data.X_train_lstm, data.y_train, length)
         rows, steps, features = train_X.shape
         flattened = train_X.reshape(rows, steps * features)
         smote = SMOTE(
@@ -94,9 +88,7 @@ class LSTMDetector:
         self.validation_X, self.validation_y = self.create_sequences(
             data.X_validation_lstm, data.y_validation, length
         )
-        self.test_X, self.test_y = self.create_sequences(
-            data.X_test_lstm, data.y_test, length
-        )
+        self.test_X, self.test_y = self.create_sequences(data.X_test_lstm, data.y_test, length)
         self.model = self._build(features)
         started = time.time()
         self.history = self.model.fit(
@@ -105,7 +97,6 @@ class LSTMDetector:
             validation_data=(self.validation_X, self.validation_y),
             epochs=100,
             batch_size=4096,
-            class_weight=data.class_weights,
             callbacks=[
                 tf.keras.callbacks.EarlyStopping(
                     monitor="val_loss",

@@ -4,9 +4,9 @@ import time
 
 import numpy as np
 import pandas as pd
-import torch
 from pytorch_tabnet.tab_model import TabNetClassifier
 from sklearn.model_selection import train_test_split
+import torch
 
 from deteccion_fraude.config import ExperimentConfig
 from deteccion_fraude.dataset import PreparedData
@@ -59,24 +59,18 @@ class TabNetFeatureSelector:
 
         raw_importance = self.model.feature_importances_
         self.noise_mask = raw_importance > 1e-6
-        filtered_names = [
-            name for name, keep in zip(data.feature_names, self.noise_mask) if keep
-        ]
+        filtered_names = [name for name, keep in zip(data.feature_names, self.noise_mask) if keep]
         importance = raw_importance[self.noise_mask]
         importance = importance / importance.sum()
-        self.feature_importance = pd.Series(
-            importance, index=filtered_names
-        ).sort_values(ascending=False)
-        self.cumulative_importance = np.cumsum(self.feature_importance.values) * 100
-        self.features_for_95 = int(
-            np.searchsorted(self.cumulative_importance, 95) + 1
+        self.feature_importance = pd.Series(importance, index=filtered_names).sort_values(
+            ascending=False
         )
+        self.cumulative_importance = np.cumsum(self.feature_importance.values) * 100
+        self.features_for_95 = int(np.searchsorted(self.cumulative_importance, 95) + 1)
         self.n_selected = min(
             max(self.features_for_95, self.config.min_lstm_features),
             len(filtered_names),
         )
-        self.selected_features = self.feature_importance.head(
-            self.n_selected
-        ).index.tolist()
+        self.selected_features = self.feature_importance.head(self.n_selected).index.tolist()
         data.apply_feature_selection(self.noise_mask, self.selected_features)
         return data

@@ -1,6 +1,11 @@
 # Data
 /data/
-
+models/*.keras
+models/*.zip
+models/*.pkl
+.agents
+skills-lock.json
+*.md
 # Mac OS-specific storage files
 .DS_Store
 

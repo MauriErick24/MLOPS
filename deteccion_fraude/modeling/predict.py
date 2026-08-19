@@ -1,29 +1,36 @@
 from pathlib import Path
+import pickle
 
 from loguru import logger
-from tqdm import tqdm
 import typer
 
-from deteccion_fraude.config import MODELS_DIR, PROCESSED_DATA_DIR
+from deteccion_fraude.config import MODELS_DIR, ExperimentConfig
 
 app = typer.Typer()
 
 
 @app.command()
 def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    features_path: Path = PROCESSED_DATA_DIR / "test_features.csv",
-    model_path: Path = MODELS_DIR / "model.pkl",
-    predictions_path: Path = PROCESSED_DATA_DIR / "test_predictions.csv",
-    # -----------------------------------------
+    data_path: Path = MODELS_DIR / "results.pkl",
 ):
-    # ---- REPLACE THIS WITH YOUR OWN CODE ----
-    logger.info("Performing inference for model...")
-    for i in tqdm(range(10), total=10):
-        if i == 5:
-            logger.info("Something happened for iteration 5.")
-    logger.success("Inference complete.")
-    # -----------------------------------------
+    config = ExperimentConfig()
+
+    results_path = config.models_dir / "results.pkl"
+    if not results_path.exists():
+        logger.error("No se encontro results.pkl. Ejecute train primero.")
+        raise typer.Exit(1)
+
+    with results_path.open("rb") as f:
+        results = pickle.load(f)
+
+    for model_name in ("lstm", "tabnet"):
+        if model_name in results:
+            r = results[model_name]
+            logger.info(
+                f"{model_name.upper()}: threshold={r['threshold']:.3f}, "
+                f"f1={r['f1']:.4f}, roi={r['roi']:.2f}%"
+            )
+    logger.success("Resumen de modelos cargado.")
 
 
 if __name__ == "__main__":
