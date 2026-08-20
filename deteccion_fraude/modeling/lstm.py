@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 
 from imblearn.over_sampling import SMOTE
+from loguru import logger
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
@@ -66,8 +67,6 @@ class LSTMDetector:
         return model
 
     def fit(self, data: PreparedData) -> "LSTMDetector":
-        from loguru import logger
-
         length = self.config.sequence_length
         train_X, train_y = self.create_sequences(data.X_train_lstm, data.y_train, length)
         logger.info(f"LSTM train shape: {train_X.shape}, class distribution: {dict(zip(*np.unique(train_y, return_counts=True)))}")
@@ -117,8 +116,6 @@ class LSTMDetector:
         return self
 
     def predict_validation(self) -> np.ndarray:
-        from loguru import logger
-
         preds = self.model.predict(self.validation_X, verbose=0).ravel()
         logger.info(f"LSTM val predictions: min={preds.min():.4f}, max={preds.max():.4f}, mean={preds.mean():.4f}, >0.5 count={int((preds > 0.5).sum())}/{len(preds)}")
         return preds

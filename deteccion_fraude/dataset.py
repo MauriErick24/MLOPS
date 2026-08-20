@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from loguru import logger
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -60,8 +61,6 @@ class FraudDataset:
     @staticmethod
     def load(path) -> pd.DataFrame:
         """Lee CSV, elimina nulos y duplicados."""
-        from loguru import logger
-
         logger.info(f"Cargando dataset desde {path}")
         df = pd.read_csv(path)
         missing = FraudDataset.REQUIRED_COLUMNS.difference(df.columns)
@@ -80,8 +79,6 @@ class FraudDataset:
     @staticmethod
     def split(df: pd.DataFrame, config: ExperimentConfig) -> DatasetSplits:
         """Particion estratificada 70/15/15 ordenada por Time."""
-        from loguru import logger
-
         df_train, df_temp = train_test_split(
             df, test_size=0.30, random_state=config.random_state, stratify=df["Class"]
         )
