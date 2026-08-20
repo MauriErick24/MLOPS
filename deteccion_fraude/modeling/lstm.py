@@ -1,0 +1,127 @@
+"""Modelo LSTM para ventanas de transacciones."""
+
+from pathlib import Path
+import time
+
+from imblearn.over_sampling import SMOTE
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import backend as K
+
+from deteccion_fraude.config import ExperimentConfig
+from deteccion_fraude.dataset import PreparedData
+
+
+@tf.keras.utils.register_keras_serializable(package="deteccion_fraude")
+class FocalLoss(tf.keras.losses.Loss):
+    """Pérdida focal serializable para clasificación binaria desbalanceada."""
+
+    def __init__(self, gamma: float = 2.0, alpha: float = 0.75, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.gamma = gamma
+        self.alpha = alpha
+
+    def call(self, y_true, y_pred):
+        y_true = tf.cast(y_true, y_pred.dtype)
+        y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
+        probability = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
+        alpha = tf.where(tf.equal(y_true, 1), self.alpha, 1 - self.alpha)
+        focal_weight = alpha * K.pow(1.0 - probability, self.gamma)
+        cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+        return K.mean(focal_weight * cross_entropy)
+
+    def get_config(self) -> dict:
+        return {**super().get_config(), "gamma": self.gamma, "alpha": self.alpha}
+
+
+class LSTMDetector:
+    def __init__(self, config: ExperimentConfig) -> None:
+        self.config = config
+
+    @staticmethod
+    def create_sequences(
+        data: np.ndarray, labels: np.ndarray, length: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        sequences = [data[i : i + length] for i in range(len(data) - length + 1)]
+        targets = [labels[i + length - 1] for i in range(len(data) - length + 1)]
+        return np.asarray(sequences), np.asarray(targets)
+
+    def _build(self, n_features: int) -> tf.keras.Model:
+        sequence_length = self.config.sequence_length
+        model = tf.keras.Sequential(
+            [
+                tf.keras.layers.Input(shape=(sequence_length, n_features)),
+                tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, return_sequences=True)),
+                tf.keras.layers.Dropout(0.4),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(32)),
+                tf.keras.layers.Dropout(0.4),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Dense(32, activation="relu"),
+                tf.keras.layers.Dropout(0.2),
+                tf.keras.layers.Dense(1, activation="sigmoid"),
+            ]
+        )
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
+            loss=FocalLoss(gamma=2.0, alpha=0.75),
+            metrics=[
+                "accuracy",
+                tf.keras.metrics.Recall(name="recall"),
+                tf.keras.metrics.AUC(name="auc"),
+            ],
+        )
+        return model
+
+    def fit(self, data: PreparedData) -> "LSTMDetector":
+        length = self.config.sequence_length
+        train_X, train_y = self.create_sequences(data.X_train_lstm, data.y_train, length)
+        rows, steps, features = train_X.shape
+        flattened = train_X.reshape(rows, steps * features)
+        smote = SMOTE(
+            sampling_strategy=self.config.smote_ratio,
+            random_state=self.config.random_state,
+        )
+        balanced_X, balanced_y = smote.fit_resample(flattened, train_y)
+        balanced_X = balanced_X.reshape(-1, steps, features)
+
+        self.validation_X, self.validation_y = self.create_sequences(
+            data.X_validation_lstm, data.y_validation, length
+        )
+        self.test_X, self.test_y = self.create_sequences(data.X_test_lstm, data.y_test, length)
+        self.model = self._build(features)
+        started = time.time()
+        self.history = self.model.fit(
+            balanced_X,
+            balanced_y,
+            validation_data=(self.validation_X, self.validation_y),
+            epochs=100,
+            batch_size=4096,
+            callbacks=[
+                tf.keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    patience=5,
+                    restore_best_weights=True,
+                    verbose=0,
+                ),
+                tf.keras.callbacks.ReduceLROnPlateau(
+                    monitor="val_loss",
+                    factor=0.5,
+                    patience=4,
+                    min_lr=1e-6,
+                    verbose=0,
+                ),
+            ],
+            verbose=0,
+        )
+        self.training_time = time.time() - started
+        return self
+
+    def predict_validation(self) -> np.ndarray:
+        return self.model.predict(self.validation_X, verbose=0).ravel()
+
+    def predict_test(self) -> np.ndarray:
+        return self.model.predict(self.test_X, verbose=0).ravel()
+
+    def save(self, path: Path) -> None:
+        self.model.save(path)

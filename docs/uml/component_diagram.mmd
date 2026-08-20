@@ -1,0 +1,70 @@
+graph TB
+    subgraph "CLI Layer"
+        train["<b>train.py</b><br/>python deteccion_fraude/modeling/train.py"]
+    end
+
+    subgraph "Core Layer (deteccion_fraude/)"
+        config["<b>ExperimentConfig</b><br/>@dataclass(frozen=True)<br/>11 params + 4 properties"]
+        dataset["<b>FraudDataset</b><br/>static: load, clean, split"]
+        features["<b>FraudFeatureEngineer</b><br/>transform: 22 engineered features"]
+        preprocessor["<b>FraudPreprocessor</b><br/>scalers + SMOTE + class weights"]
+        evaluator["<b>FraudModelEvaluator</b><br/>threshold optimization + metrics"]
+        visualizer["<b>FraudVisualizer</b><br/>6 plotting methods"]
+    end
+
+    subgraph "Modeling Layer (deteccion_fraude/modeling/)"
+        pipeline["<b>FraudDetectionPipeline</b><br/>&laquo;facade&raquo;<br/>orchestrates everything"]
+        selector["<b>TabNetFeatureSelector</b><br/>noise filter + top-N selection"]
+        lstm["<b>LSTMDetector</b><br/>Bidirectional LSTM + FocalLoss"]
+        tabnet["<b>TabNetDetector</b><br/>TabNet classifier"]
+    end
+
+    subgraph "Data Objects"
+        splits["<b>DatasetSplits</b><br/>df_train, df_val, df_test"]
+        prepared["<b>PreparedData</b><br/>15 arrays + scalers + weights"]
+    end
+
+    subgraph "External ML Frameworks"
+        sklearn["scikit-learn<br/>RobustScaler, StandardScaler"]
+        imblearn["imbalanced-learn<br/>SMOTE"]
+        tensorflow["TensorFlow/Keras<br/>BiLSTM, FocalLoss"]
+        pytorch["PyTorch<br/>TabNet, CUDA"]
+    end
+
+    subgraph "DVC / Storage"
+        dvc["DVC<br/>data/raw/creditcard.csv"]
+        gdrive["Google Drive<br/>remote: gdrive://..."]
+    end
+
+    train --> config
+    train --> dataset
+    train --> preprocessor
+    train --> pipeline
+
+    dataset --> splits
+    preprocessor --> features
+    preprocessor --> prepared
+
+    pipeline --> selector
+    pipeline --> lstm
+    pipeline --> tabnet
+    pipeline --> evaluator
+
+    selector --> pytorch
+    selector --> prepared
+    lstm --> tensorflow
+    lstm --> prepared
+    tabnet --> pytorch
+    tabnet --> prepared
+    preprocessor --> sklearn
+    preprocessor --> imblearn
+    evaluator --> sklearn
+
+    config -.- dvc
+    dvc --- gdrive
+
+    style pipeline fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
+    style config fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style train fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style lstm fill:#fce4ec,stroke:#c62828
+    style tabnet fill:#f3e5f5,stroke:#7b1fa2

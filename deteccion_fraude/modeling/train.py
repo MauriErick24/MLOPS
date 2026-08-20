@@ -1,29 +1,32 @@
-from pathlib import Path
-
 from loguru import logger
-from tqdm import tqdm
 import typer
 
-from deteccion_fraude.config import MODELS_DIR, PROCESSED_DATA_DIR
+from deteccion_fraude.config import ExperimentConfig
 
 app = typer.Typer()
 
 
 @app.command()
-def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    features_path: Path = PROCESSED_DATA_DIR / "features.csv",
-    labels_path: Path = PROCESSED_DATA_DIR / "labels.csv",
-    model_path: Path = MODELS_DIR / "model.pkl",
-    # -----------------------------------------
-):
-    # ---- REPLACE THIS WITH YOUR OWN CODE ----
-    logger.info("Training some model...")
-    for i in tqdm(range(10), total=10):
-        if i == 5:
-            logger.info("Something happened for iteration 5.")
-    logger.success("Modeling training complete.")
-    # -----------------------------------------
+def main():
+    from deteccion_fraude.dataset import FraudDataset
+    from deteccion_fraude.features import FraudPreprocessor
+    from deteccion_fraude.modeling.pipeline import FraudDetectionPipeline
+
+    config = ExperimentConfig()
+    df = FraudDataset.load(config.data_file)
+    splits = FraudDataset.split(df, config)
+    preprocessor = FraudPreprocessor(config)
+    data = preprocessor.fit_transform(splits)
+
+    pipeline = FraudDetectionPipeline(config, data)
+    pipeline.select_features()
+    pipeline.train()
+    results = pipeline.evaluate()
+    pipeline.save_artifacts()
+
+    for name, result in results.items():
+        logger.info(f"{name}: F1={result['f1']:.4f}, ROI={result['roi']:.2f}%")
+    logger.success("Entrenamiento completo.")
 
 
 if __name__ == "__main__":

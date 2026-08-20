@@ -1,5 +1,20 @@
 # Data
-/data/
+/data/*
+!/data/raw/
+!/data/raw/*.dvc
+
+# Model artifacts (too large for git)
+models/*.keras
+models/*.zip
+models/*.pkl
+
+# Agent config
+.agents
+skills-lock.json
+
+# Docs (managed separately)
+*.md
+!/docs/uml/*.md
 
 # Mac OS-specific storage files
 .DS_Store

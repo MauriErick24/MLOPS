@@ -1,0 +1,48 @@
+sequenceDiagram
+    autonumber
+    participant C as ExperimentConfig
+    participant FD as FraudDataset
+    participant FP as FraudPreprocessor
+    participant P as FraudDetectionPipeline
+    participant S as TabNetFeatureSelector
+    participant LSTM as LSTMDetector
+    participant TN as TabNetDetector
+    participant E as FraudModelEvaluator
+
+    C->>C: ExperimentConfig()
+    FD->>FD: load(data_file)
+    FD->>FD: clean(df)
+    FD->>FD: split(df, config)
+    FD-->>FP: DatasetSplits
+
+    FP->>FP: FraudFeatureEngineer.transform()
+    FP->>FP: RobustScaler.fit_transform()
+    FP->>FP: StandardScaler.fit_transform()
+    FP->>FP: SMOTE.fit_resample()
+    FP-->>P: PreparedData
+
+    P->>S: TabNetFeatureSelector.fit_transform(data)
+    S->>S: Train temporary TabNet
+    S->>S: Extract feature importances
+    S->>P: data.apply_feature_selection()
+    S-->>P: PreparedData (mutated)
+
+    P->>LSTM: LSTMDetector.fit(data)
+    LSTM->>LSTM: create_sequences()
+    LSTM->>LSTM: Build BiLSTM + FocalLoss
+    LSTM->>LSTM: Train with EarlyStopping
+    LSTM-->>P: LSTMDetector (trained)
+
+    P->>TN: TabNetDetector.fit(data)
+    TN->>TN: Build TabNetClassifier
+    TN->>TN: Train on X_balanced
+    TN-->>P: TabNetDetector (trained)
+
+    P->>E: find_best_threshold(y_val, scores)
+    E-->>P: (threshold, roi)
+
+    P->>E: evaluate(y_test, scores, name, threshold)
+    E-->>P: metrics dict
+
+    P->>P: save_artifacts()
+    Note over P: Pickles results.pkl,<br/>selected_features.pkl,<br/>scalers.pkl
