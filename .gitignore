@@ -14,6 +14,7 @@ skills-lock.json
 
 # Docs (managed separately)
 *.md
+!/docs/uml/*.md
 
 # Mac OS-specific storage files
 .DS_Store

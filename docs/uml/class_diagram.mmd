@@ -1,0 +1,196 @@
+classDiagram
+    direction TB
+
+    class ExperimentConfig {
+        <<dataclass, frozen>>
+        +Path data_file
+        +Path models_dir
+        +Path figures_dir
+        +int random_state
+        +float validation_size
+        +float test_size
+        +int sequence_length
+        +float smote_ratio
+        +float false_negative_cost
+        +float false_positive_cost
+        +int min_lstm_features
+        +list~str~ pca_columns$
+        +list~str~ robust_columns$
+        +list~str~ standard_columns$
+        +list~str~ feature_columns$
+        +create_output_directories() None
+    }
+
+    class DatasetSplits {
+        <<dataclass>>
+        +DataFrame df_train
+        +DataFrame df_val
+        +DataFrame df_test
+    }
+
+    class PreparedData {
+        <<dataclass>>
+        +ndarray X_train
+        +ndarray X_validation
+        +ndarray X_test
+        +ndarray X_train_lstm
+        +ndarray X_validation_lstm
+        +ndarray X_test_lstm
+        +ndarray X_balanced
+        +ndarray y_train
+        +ndarray y_validation
+        +ndarray y_test
+        +ndarray y_balanced
+        +list~str~ feature_names
+        +dict class_weights
+        +object robust_scaler
+        +object standard_scaler
+        +apply_feature_selection(noise_mask, selected_features) None
+    }
+
+    class FraudDataset {
+        <<utility>>
+        +REQUIRED_COLUMNS$ set
+        +load(path)$ DataFrame
+        +clean(dataframe)$ DataFrame
+        +split(df, config)$ DatasetSplits
+    }
+
+    class FraudFeatureEngineer {
+        <<service>>
+        +ExperimentConfig config
+        +transform(dataframe) DataFrame
+    }
+
+    class FraudPreprocessor {
+        <<service>>
+        +ExperimentConfig config
+        +FraudFeatureEngineer engineer
+        +fit_transform(splits) PreparedData
+    }
+
+    class FraudModelEvaluator {
+        <<service>>
+        +ExperimentConfig config
+        +find_best_threshold(y_true, scores) tuple
+        +evaluate(y_true, scores, model_name, threshold) dict
+        +theoretical_best_f1(y_true, scores)$ float
+    }
+
+    class FraudVisualizer {
+        <<view>>
+        +ExperimentConfig config
+        +summarize(dataframe)$ dict
+        +plot_overview(dataframe) None
+        +plot_feature_importance(selector)$ None
+        +plot_model_comparison(y_true, scores, results)$ None
+        +plot_confusion_matrix(cm, model_name) None
+        +plot_results_summary(results) None
+    }
+
+    class TabNetFeatureSelector {
+        <<service>>
+        +ExperimentConfig config
+        +str device
+        +TabNetClassifier model
+        +float training_time
+        +ndarray noise_mask
+        +Series feature_importance
+        +ndarray cumulative_importance
+        +int features_for_95
+        +int n_selected
+        +list~str~ selected_features
+        +_build_model() TabNetClassifier
+        +fit_transform(data) PreparedData
+    }
+
+    class FocalLoss {
+        <<loss, Keras serializable>>
+        +float gamma
+        +float alpha
+        +call(y_true, y_pred) Tensor
+        +get_config() dict
+    }
+
+    class LSTMDetector {
+        <<model>>
+        +ExperimentConfig config
+        +ndarray validation_X
+        +ndarray validation_y
+        +ndarray test_X
+        +ndarray test_y
+        +Model model
+        +History history
+        +float training_time
+        +create_sequences(data, labels, length)$ tuple
+        +_build(n_features) Model
+        +fit(data) LSTMDetector
+        +predict_validation() ndarray
+        +predict_test() ndarray
+        +save(path) None
+    }
+
+    class TabNetDetector {
+        <<model>>
+        +ExperimentConfig config
+        +str device
+        +TabNetClassifier model
+        +float training_time
+        +_build() TabNetClassifier
+        +fit(data) TabNetDetector
+        +predict_validation(data) ndarray
+        +predict_test(data) ndarray
+        +save(path) None
+    }
+
+    class FraudDetectionPipeline {
+        <<facade>>
+        +ExperimentConfig config
+        +PreparedData data
+        +str device
+        +TabNetFeatureSelector selector
+        +LSTMDetector lstm
+        +TabNetDetector tabnet
+        +FraudModelEvaluator evaluator
+        +dict results
+        +dict validation_scores
+        +dict test_scores
+        +ndarray y_test_aligned
+        +select_features() FraudDetectionPipeline
+        +train() FraudDetectionPipeline
+        +evaluate() dict
+        +save_artifacts() None
+    }
+
+    class tf_KerasLoss {
+        <<external>>
+    }
+
+    FraudDetectionPipeline *-- TabNetFeatureSelector : selector
+    FraudDetectionPipeline *-- LSTMDetector : lstm
+    FraudDetectionPipeline *-- TabNetDetector : tabnet
+    FraudDetectionPipeline *-- FraudModelEvaluator : evaluator
+    FraudPreprocessor *-- FraudFeatureEngineer : engineer
+
+    FocalLoss --|> tf_KerasLoss : extends
+
+    FraudDetectionPipeline --> ExperimentConfig : config
+    FraudDetectionPipeline --> PreparedData : data
+
+    LSTMDetector ..> FocalLoss : uses
+    LSTMDetector ..> PreparedData : consumes
+    TabNetDetector ..> PreparedData : consumes
+    TabNetFeatureSelector ..> PreparedData : mutates
+    FraudPreprocessor ..> DatasetSplits : consumes
+    FraudPreprocessor ..> PreparedData : produces
+    FraudDataset ..> DatasetSplits : produces
+    FraudDataset ..> ExperimentConfig : param
+
+    FraudVisualizer --> ExperimentConfig : config
+    FraudVisualizer ..> TabNetFeatureSelector : duck-typed
+
+    tab Trajectory {
+        ExperimentConfig --> FraudDataset : config
+        FraudDataset --> FraudPreprocessor : splits
+        FraudPreprocessor --> FraudDetectionPipeline : data
+    }
