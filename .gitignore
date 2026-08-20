@@ -8,6 +8,9 @@ models/*.keras
 models/*.zip
 models/*.pkl
 
+# Generated figures
+reports/figures/*.png
+
 # Agent config
 .agents
 skills-lock.json
