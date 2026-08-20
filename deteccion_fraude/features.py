@@ -1,6 +1,5 @@
 from typing import TYPE_CHECKING
 
-from imblearn.over_sampling import SMOTE
 from loguru import logger
 import numpy as np
 import pandas as pd
@@ -62,14 +61,14 @@ class FraudFeatureEngineer:
 
 
 class FraudPreprocessor:
-    """Escalado, SMOTE y preparacion de matrices para modelos."""
+    """Escalado y preparacion de matrices para modelos."""
 
     def __init__(self, config: ExperimentConfig) -> None:
         self.config = config
         self.engineer = FraudFeatureEngineer(config)
 
     def fit_transform(self, splits: "DatasetSplits") -> "PreparedData":
-        """Transforma splits en PreparedData con scaling y SMOTE."""
+        """Transforma splits en PreparedData con scaling."""
         from deteccion_fraude.dataset import PreparedData
 
         df_train = self.engineer.transform(splits.df_train)
@@ -97,19 +96,12 @@ class FraudPreprocessor:
         y_val = df_val["Class"].values
         y_test = df_test["Class"].values
 
-        smote = SMOTE(
-            sampling_strategy=self.config.smote_ratio,
-            random_state=self.config.random_state,
-        )
-        X_balanced, y_balanced = smote.fit_resample(X_train, y_train)
-
         weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
         class_weights = dict(zip(np.unique(y_train).astype(int), weights))
 
         logger.info(
             f"PreparedData — train: {X_train.shape}, val: {X_val.shape}, test: {X_test.shape}"
         )
-        logger.info(f"SMOTE — balanced: {X_balanced.shape}")
 
         return PreparedData(
             X_train=X_train,
@@ -118,11 +110,9 @@ class FraudPreprocessor:
             X_train_lstm=X_train.copy(),
             X_validation_lstm=X_val.copy(),
             X_test_lstm=X_test.copy(),
-            X_balanced=X_balanced,
             y_train=y_train,
             y_validation=y_val,
             y_test=y_test,
-            y_balanced=y_balanced,
             feature_names=list(feature_cols),
             class_weights=class_weights,
             robust_scaler=robust_scaler,

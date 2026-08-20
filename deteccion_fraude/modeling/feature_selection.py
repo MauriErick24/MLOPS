@@ -2,6 +2,7 @@
 
 import time
 
+from imblearn.over_sampling import SMOTE
 import numpy as np
 import pandas as pd
 from pytorch_tabnet.tab_model import TabNetClassifier
@@ -36,12 +37,17 @@ class TabNetFeatureSelector:
         )
 
     def fit_transform(self, data: PreparedData) -> PreparedData:
+        smote = SMOTE(
+            sampling_strategy=self.config.smote_ratio,
+            random_state=self.config.random_state,
+        )
+        X_balanced, y_balanced = smote.fit_resample(data.X_train, data.y_train)
         X_train, X_valid, y_train, y_valid = train_test_split(
-            data.X_balanced,
-            data.y_balanced,
+            X_balanced,
+            y_balanced,
             test_size=0.15,
             random_state=self.config.random_state,
-            stratify=data.y_balanced,
+            stratify=y_balanced,
         )
         self.model = self._build_model()
         started = time.time()

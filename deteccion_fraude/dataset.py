@@ -26,11 +26,9 @@ class PreparedData:
     X_train_lstm: np.ndarray
     X_validation_lstm: np.ndarray
     X_test_lstm: np.ndarray
-    X_balanced: np.ndarray
     y_train: np.ndarray
     y_validation: np.ndarray
     y_test: np.ndarray
-    y_balanced: np.ndarray
     feature_names: list[str]
     class_weights: dict[int, float]
     robust_scaler: object
@@ -43,7 +41,6 @@ class PreparedData:
         self.X_train = self.X_train[:, noise_mask]
         self.X_validation = self.X_validation[:, noise_mask]
         self.X_test = self.X_test[:, noise_mask]
-        self.X_balanced = self.X_balanced[:, noise_mask]
 
         filtered_names = [n for n, keep in zip(self.feature_names, noise_mask) if keep]
         selected_idx = [filtered_names.index(f) for f in selected_features]

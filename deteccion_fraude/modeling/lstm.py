@@ -12,26 +12,18 @@ from deteccion_fraude.config import ExperimentConfig
 from deteccion_fraude.dataset import PreparedData
 
 
-@tf.keras.utils.register_keras_serializable(package="deteccion_fraude")
-class FocalLoss(tf.keras.losses.Loss):
-    """Pérdida focal serializable para clasificación binaria desbalanceada."""
+def _focal_loss_fn(gamma: float = 2.0, alpha: float = 0.75):
+    """Closure compatible con Keras 3: retorna loss escalar por batch."""
 
-    def __init__(self, gamma: float = 2.0, alpha: float = 0.75, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.gamma = gamma
-        self.alpha = alpha
-
-    def call(self, y_true, y_pred):
-        y_true = tf.cast(y_true, y_pred.dtype)
+    def focal_loss(y_true, y_pred):
         y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
-        probability = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
-        alpha = tf.where(tf.equal(y_true, 1), self.alpha, 1 - self.alpha)
-        focal_weight = alpha * K.pow(1.0 - probability, self.gamma)
+        pt = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
+        alpha_t = tf.where(tf.equal(y_true, 1), alpha, 1 - alpha)
+        focal_weight = alpha_t * K.pow(1.0 - pt, gamma)
         cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
         return K.mean(focal_weight * cross_entropy)
 
-    def get_config(self) -> dict:
-        return {**super().get_config(), "gamma": self.gamma, "alpha": self.alpha}
+    return focal_loss
 
 
 class LSTMDetector:
@@ -64,7 +56,7 @@ class LSTMDetector:
         )
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
-            loss=FocalLoss(gamma=2.0, alpha=0.75),
+            loss=_focal_loss_fn(gamma=2.0, alpha=0.75),
             metrics=[
                 "accuracy",
                 tf.keras.metrics.Recall(name="recall"),
@@ -74,8 +66,12 @@ class LSTMDetector:
         return model
 
     def fit(self, data: PreparedData) -> "LSTMDetector":
+        from loguru import logger
+
         length = self.config.sequence_length
         train_X, train_y = self.create_sequences(data.X_train_lstm, data.y_train, length)
+        logger.info(f"LSTM train shape: {train_X.shape}, class distribution: {dict(zip(*np.unique(train_y, return_counts=True)))}")
+        logger.info(f"LSTM class_weights: {data.class_weights}")
         rows, steps, features = train_X.shape
         flattened = train_X.reshape(rows, steps * features)
         smote = SMOTE(
@@ -115,10 +111,17 @@ class LSTMDetector:
             verbose=0,
         )
         self.training_time = time.time() - started
+        final_loss = self.history.history["loss"][-1]
+        final_val_loss = self.history.history["val_loss"][-1]
+        logger.info(f"LSTM training: {len(self.history.epoch)} epochs, loss={final_loss:.4f}, val_loss={final_val_loss:.4f}")
         return self
 
     def predict_validation(self) -> np.ndarray:
-        return self.model.predict(self.validation_X, verbose=0).ravel()
+        from loguru import logger
+
+        preds = self.model.predict(self.validation_X, verbose=0).ravel()
+        logger.info(f"LSTM val predictions: min={preds.min():.4f}, max={preds.max():.4f}, mean={preds.mean():.4f}, >0.5 count={int((preds > 0.5).sum())}/{len(preds)}")
+        return preds
 
     def predict_test(self) -> np.ndarray:
         return self.model.predict(self.test_X, verbose=0).ravel()

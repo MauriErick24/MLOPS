@@ -3,6 +3,7 @@
 from pathlib import Path
 import time
 
+from imblearn.over_sampling import SMOTE
 import numpy as np
 from pytorch_tabnet.tab_model import TabNetClassifier
 import torch
@@ -36,10 +37,15 @@ class TabNetDetector:
 
     def fit(self, data: PreparedData) -> "TabNetDetector":
         self.model = self._build()
+        smote = SMOTE(
+            sampling_strategy=self.config.smote_ratio,
+            random_state=self.config.random_state,
+        )
+        X_balanced, y_balanced = smote.fit_resample(data.X_train, data.y_train)
         started = time.time()
         self.model.fit(
-            data.X_balanced,
-            data.y_balanced,
+            X_balanced,
+            y_balanced,
             eval_set=[(data.X_validation, data.y_validation)],
             eval_metric=["auc", "logloss"],
             max_epochs=50,
