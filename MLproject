@@ -1,0 +1,26 @@
+name: fraud_detection
+python_env: python_env.yaml
+entry_points:
+  main:
+    command: "python -m deteccion_fraude.modeling.train"
+    parameters:
+      experiment:
+        type: str
+        default: "deteccion_fraude"
+        description: "Nombre del experimento MLflow"
+      run_name:
+        type: str
+        default: "fraud_detection_pipeline"
+        description: "Nombre del run"
+      promote:
+        type: bool
+        default: false
+        description: "Promover mejor modelo a Production"
+
+  compare:
+    command: "python -m deteccion_fraude.modeling.train compare"
+    parameters:
+      experiment:
+        type: str
+        default: "deteccion_fraude"
+        description: "Nombre del experimento MLflow"
