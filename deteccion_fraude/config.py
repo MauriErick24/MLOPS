@@ -39,6 +39,8 @@ class ExperimentConfig:
     false_negative_cost: float = 150.0
     false_positive_cost: float = 25.0
     min_lstm_features: int = 30
+    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
+    mlflow_experiment_name: str = "deteccion_fraude"
 
     @property
     def pca_columns(self) -> list[str]:

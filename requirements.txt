@@ -1,6 +1,7 @@
 imbalanced-learn>=0.14
 loguru
 matplotlib
+mlflow>=2.10,<3.0
 mkdocs
 numpy>=1.24,<2.0
 pandas>=2.0,<3.0
