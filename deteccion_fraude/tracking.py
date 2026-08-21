@@ -7,6 +7,7 @@ import mlflow
 from mlflow.models.signature import infer_signature
 from mlflow.pyfunc import PythonModel
 import mlflow.sklearn
+import numpy as np
 import pandas as pd
 
 from deteccion_fraude.config import ExperimentConfig
@@ -47,7 +48,7 @@ class FraudDecisionWrapper(PythonModel):
         self.model = trained_model
         self.decision_threshold = decision_threshold
 
-    def predict(self, context, model_input):
+    def predict(self, context, model_input: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
         probabilities = self.model.predict_proba(model_input)[:, 1]
         decisions = (probabilities >= self.decision_threshold).astype(int)
         return pd.DataFrame(
@@ -57,6 +58,22 @@ class FraudDecisionWrapper(PythonModel):
                 "high_risk_flag": (probabilities >= 0.85).astype(int),
             }
         )
+
+
+class LSTMPyFuncWrapper(PythonModel):
+    """Wrapper PyFunc para LSTM que acepta 2D y convierte a 3D."""
+
+    def __init__(self, trained_model, sequence_length: int = 5):
+        self.model = trained_model
+        self.sequence_length = sequence_length
+
+    def predict(self, context, model_input: pd.DataFrame, params: dict | None = None) -> np.ndarray:
+        arr = model_input.values if isinstance(model_input, pd.DataFrame) else model_input
+        if len(arr.shape) == 2:
+            n_samples = arr.shape[0] // self.sequence_length
+            arr = arr[: n_samples * self.sequence_length]
+            arr = arr.reshape(n_samples, self.sequence_length, -1)
+        return self.model.predict(arr).ravel()
 
 
 class MLflowFraudTrainer:
@@ -73,6 +90,7 @@ class MLflowFraudTrainer:
         tabnet_detector,
         data,
         results: dict,
+        run_name: str = "fraud_detection_pipeline",
     ) -> str:
         """Registra un run completo con ambos modelos en MLflow."""
         lineage = get_lineage_metadata()
@@ -84,7 +102,7 @@ class MLflowFraudTrainer:
             "false_positive_cost": self.config.false_positive_cost,
         }
 
-        with mlflow.start_run(run_name="fraud_detection_pipeline") as run:
+        with mlflow.start_run(run_name=run_name) as run:
             mlflow.set_tags(
                 {
                     "environment": "development",
@@ -150,3 +168,70 @@ class MLflowFraudTrainer:
             run_id = run.info.run_id
             logger.info(f"MLflow run completado: {run_id}")
             return run_id
+
+    def evaluate_with_mlflow(
+        self, model, X_test: np.ndarray, y_test: np.ndarray, model_name: str
+    ) -> dict:
+        """Evaluacion automatizada usando mlflow.evaluate()."""
+        wrapped_model = FraudDecisionWrapper(model)
+        with mlflow.start_run(run_name=f"eval_{model_name}"):
+            eval_result = mlflow.evaluate(
+                wrapped_model.predict,
+                pd.DataFrame(X_test),
+                targets=y_test,
+                model_type="classifier",
+                evaluators=["default"],
+                evaluator_config={"log_model_explainability": False},
+            )
+            logger.info(f"Evaluacion {model_name}: {eval_result.metrics}")
+            return eval_result.metrics
+
+    def promote_best_model(self, run_id: str, metric: str = "f1") -> str:
+        """Selecciona el mejor modelo y lo promueve a Production."""
+        client = mlflow.tracking.MlflowClient()
+        run = client.get_run(run_id)
+        lstm_metric = run.data.metrics.get(f"lstm_{metric}", 0)
+        tabnet_metric = run.data.metrics.get(f"tabnet_{metric}", 0)
+        winner = "lstm" if lstm_metric >= tabnet_metric else "tabnet"
+
+        model_uri = f"runs:/{run_id}/{winner}_model"
+        model_name = f"fraud_{winner}"
+
+        result = client.create_model_version(
+            name=model_name,
+            source=model_uri,
+            run_id=run_id,
+        )
+        client.transition_model_version_stage(
+            name=model_name,
+            version=result.version,
+            stage="Production",
+        )
+        logger.info(
+            f"Modelo ganador: {winner} ({metric}={max(lstm_metric, tabnet_metric):.4f}) "
+            f"— version {result.version} en Production"
+        )
+        return winner
+
+    def compare_runs(self, experiment: str | None = None) -> pd.DataFrame:
+        """Compara metricas entre runs del experimento."""
+        exp_id = experiment or self.config.mlflow_experiment_name
+        client = mlflow.tracking.MlflowClient()
+        runs = client.search_runs(experiment_ids=[exp_id])
+        if not runs:
+            logger.warning("No hay runs para comparar")
+            return pd.DataFrame()
+
+        rows = []
+        for run in runs:
+            row = {"run_id": run.info.run_id, "run_name": run.info.run_name}
+            row.update(run.data.params)
+            row.update(run.data.metrics)
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        if "run_id" in df.columns:
+            df = df.sort_values("f1", ascending=False, na_position="last")
+        logger.info(f"Comparacion de {len(df)} runs:")
+        print(df.to_string(index=False))
+        return df
