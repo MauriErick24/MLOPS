@@ -118,7 +118,6 @@ class MLflowFraudTrainer:
                     lstm_detector.model,
                     artifact_path="lstm_model",
                     signature=signature,
-                    input_example=X_sample[:3],
                 )
 
             if tabnet_detector.model is not None:
