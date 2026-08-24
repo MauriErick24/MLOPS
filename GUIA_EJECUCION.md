@@ -5,37 +5,67 @@
 > **Requisito:** Python **3.10** (no 3.14 — TensorFlow no soporta versiones mayores a 3.12)
 
 ```bash
+# Clonar repositorio
+git clone https://github.com/MauriErick24/MLOPS.git
+cd MLOPS
+
 # Crear entorno virtual con Python 3.10
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Linux/Mac
+python -m venv .venv
+
+# Activar entorno
+source .venv/bin/activate        # Linux/Mac
+.venv\Scripts\activate           # Windows
 
 # Instalar dependencias
 pip install -r requirements.txt
-
-# Instalar paquete en modo editable (registra CLI fraude)
 pip install -e .
 ```
 
-**Si tu venv tiene Python 3.14** (error con tensorflow), elimina y recrea:
+**Si tu venv tiene Python 3.14** (error con tensorflow):
 ```bash
-rmdir /s /q venv
-"C:\Users\Truji\AppData\Local\Programs\Python\Python310\python.exe" -m venv venv
-venv\Scripts\activate
+# Eliminar venv existente
+rm -rf .venv                      # Linux/Mac
+rmdir /s /q .venv                 # Windows
+
+# Recrear con Python 3.10 explicito
+python3.10 -m venv .venv          # Linux/Mac
+py -3.10 -m venv .venv            # Windows (si py launcher esta instalado)
+# O especificar la ruta completa:
+# "C:\Users\TU_USUARIO\AppData\Local\Programs\Python\Python310\python.exe" -m venv .venv
+
+source .venv/bin/activate         # Linux/Mac
+.venv\Scripts\activate            # Windows
+
 pip install -r requirements.txt
 pip install -e .
 ```
 
 ---
 
-## 2. Estructura del proyecto
+## 2. Obtener datos (DVC)
+
+El dataset esta trackeado con DVC. Despues de clonar:
+
+```bash
+# Instalar DVC (si no esta instalado)
+pip install dvc dvc-gdrive
+
+# Descargar datos desde Google Drive
+dvc pull
+```
+
+Esto descarga `data/raw/creditcard.csv` (~150MB).
+
+---
+
+## 3. Estructura del proyecto
 
 ```
 MLOPS/
 ├── MLproject                         ← Declaracion reproducible MLflow
 ├── python_env.yaml                   ← Entorno aislado
-├── mlflow.db                         ← Backend store SQLite
-├── data/raw/creditcard.csv           ← Dataset original
+├── mlflow.db                         ← Backend store SQLite (se crea al primer run)
+├── data/raw/creditcard.csv           ← Dataset original (via DVC)
 ├── deteccion_fraude/
 │   ├── config.py                     ← ExperimentConfig
 │   ├── dataset.py                    ← FraudDataset + DatasetSplits + PreparedData
@@ -56,7 +86,7 @@ MLOPS/
 
 ---
 
-## 3. CLI profesional
+## 4. CLI profesional
 
 ### Comandos disponibles
 
@@ -113,12 +143,16 @@ python -m deteccion_fraude.modeling.train compare
 
 ---
 
-## 4. MLflow Tracking
+## 5. MLflow Tracking
 
 ### Ver UI de MLflow
 
 ```bash
+# Iniciar servidor MLflow (puerto 5000 por defecto)
 mlflow ui --backend-store-uri sqlite:///mlflow.db
+
+# En otro terminal o con otro puerto
+mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
 ```
 
 Abre `http://localhost:5000` en tu navegador.
@@ -161,7 +195,7 @@ predictions = model.predict(X_new)
 
 ---
 
-## 5. Ejecucion de tests
+## 6. Ejecucion de tests
 
 ```bash
 python -m pytest tests/ -v
@@ -182,7 +216,7 @@ tests/test_features.py::test_feature_engineer_does_not_mutate_input PASSED
 
 ---
 
-## 6. Lint y formato
+## 7. Lint y formato
 
 ```bash
 # Verificar errores de lint
@@ -201,7 +235,7 @@ python -m mypy deteccion_fraude/ --ignore-missing-imports
 
 ---
 
-## 7. Configuracion del experimento
+## 8. Configuracion del experimento
 
 Todas las constantes estan en `deteccion_fraude/config.py`:
 
@@ -218,7 +252,7 @@ Todas las constantes estan en `deteccion_fraude/config.py`:
 
 ---
 
-## 8. Artefactos generados
+## 9. Artefactos generados
 
 ### En `models/` (locales)
 
@@ -251,7 +285,7 @@ Todas las constantes estan en `deteccion_fraude/config.py`:
 
 ---
 
-## 9. Uso programatico
+## 10. Uso programatico
 
 ```python
 from deteccion_fraude.config import ExperimentConfig
@@ -281,7 +315,7 @@ print(f"MLflow run: {run_id}")
 
 ---
 
-## 10. CI/CD (GitHub Actions)
+## 11. CI/CD (GitHub Actions)
 
 ```yaml
 # .github/workflows/ci.yml
@@ -323,11 +357,10 @@ jobs:
 
 ---
 
-## 11. Solucion de problemas
+## 12. Solucion de problemas
 
 ### Error: TensorFlow no encuentra GPU
 ```bash
-# Verificar GPU
 python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
 ```
 
@@ -337,10 +370,18 @@ python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU')
 mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
 ```
 
-### Warning: Add type hints to predict method
+### Error: dataset no encontrado
 ```bash
-# Ya corregido en tracking.py — FraudDecisionWrapper tiene type hints
-# Si aparece, ejecutar:
+# Verificar que DVC esta configurado
+dvc status
+
+# Descargar datos
+dvc pull
+```
+
+### Error: fraude command not found
+```bash
+# Reinstalar paquete en modo editable
 pip install -e .
 ```
 
@@ -349,4 +390,20 @@ pip install -e .
 # Primero entrenar, luego promover
 fraude train
 fraude promote
+```
+
+### Error: Python 3.14 incompatible
+```bash
+# Eliminar venv y recrear con Python 3.10
+rm -rf .venv                        # Linux/Mac
+rmdir /s /q .venv                   # Windows
+
+python3.10 -m venv .venv            # Linux/Mac
+py -3.10 -m venv .venv              # Windows
+
+source .venv/bin/activate           # Linux/Mac
+.venv\Scripts\activate              # Windows
+
+pip install -r requirements.txt
+pip install -e .
 ```
