@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from loguru import logger
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -26,11 +27,9 @@ class PreparedData:
     X_train_lstm: np.ndarray
     X_validation_lstm: np.ndarray
     X_test_lstm: np.ndarray
-    X_balanced: np.ndarray
     y_train: np.ndarray
     y_validation: np.ndarray
     y_test: np.ndarray
-    y_balanced: np.ndarray
     feature_names: list[str]
     class_weights: dict[int, float]
     robust_scaler: object
@@ -43,7 +42,6 @@ class PreparedData:
         self.X_train = self.X_train[:, noise_mask]
         self.X_validation = self.X_validation[:, noise_mask]
         self.X_test = self.X_test[:, noise_mask]
-        self.X_balanced = self.X_balanced[:, noise_mask]
 
         filtered_names = [n for n, keep in zip(self.feature_names, noise_mask) if keep]
         selected_idx = [filtered_names.index(f) for f in selected_features]
@@ -63,8 +61,6 @@ class FraudDataset:
     @staticmethod
     def load(path) -> pd.DataFrame:
         """Lee CSV, elimina nulos y duplicados."""
-        from loguru import logger
-
         logger.info(f"Cargando dataset desde {path}")
         df = pd.read_csv(path)
         missing = FraudDataset.REQUIRED_COLUMNS.difference(df.columns)
@@ -83,8 +79,6 @@ class FraudDataset:
     @staticmethod
     def split(df: pd.DataFrame, config: ExperimentConfig) -> DatasetSplits:
         """Particion estratificada 70/15/15 ordenada por Time."""
-        from loguru import logger
-
         df_train, df_temp = train_test_split(
             df, test_size=0.30, random_state=config.random_state, stratify=df["Class"]
         )

@@ -17,6 +17,9 @@ classifiers = [
 ]
 requires-python = "~=3.10.0"
 
+[project.scripts]
+fraude = "deteccion_fraude.modeling.train:app"
+
 
 [tool.ruff]
 line-length = 99

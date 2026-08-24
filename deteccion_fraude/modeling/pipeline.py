@@ -1,7 +1,5 @@
 """Fachada orientada a objetos para el experimento completo."""
 
-import pickle
-
 import numpy as np
 import tensorflow as tf
 import torch
@@ -12,6 +10,7 @@ from deteccion_fraude.evaluation import FraudModelEvaluator
 from deteccion_fraude.modeling.feature_selection import TabNetFeatureSelector
 from deteccion_fraude.modeling.lstm import LSTMDetector
 from deteccion_fraude.modeling.tabnet import TabNetDetector
+from deteccion_fraude.tracking import MLflowFraudTrainer
 
 
 class FraudDetectionPipeline:
@@ -25,6 +24,7 @@ class FraudDetectionPipeline:
         self.lstm = LSTMDetector(config)
         self.tabnet = TabNetDetector(config, self.device)
         self.evaluator = FraudModelEvaluator(config)
+        self.trainer = MLflowFraudTrainer(config)
         self.results: dict[str, dict] = {}
 
         np.random.seed(config.random_state)
@@ -69,28 +69,8 @@ class FraudDetectionPipeline:
         self.y_test_aligned = y_test
         return self.results
 
-    def save_artifacts(self) -> None:
-        clean_results = {
-            name.lower(): {key: value for key, value in result.items() if key != "cm"}
-            for name, result in self.results.items()
-        }
-        payload = {
-            **clean_results,
-            "selected_features": self.selector.selected_features,
-            "n_features_lstm": self.selector.n_selected,
-            "n_features_tabnet": len(self.data.feature_names),
-            "times": {
-                "lstm": self.lstm.training_time,
-                "tabnet": self.tabnet.training_time,
-            },
-        }
-        with (self.config.models_dir / "results.pkl").open("wb") as file:
-            pickle.dump(payload, file)
-        with (self.config.models_dir / "scaler.pkl").open("wb") as file:
-            pickle.dump(
-                {
-                    "robust": self.data.robust_scaler,
-                    "standard": self.data.standard_scaler,
-                },
-                file,
-            )
+    def log_to_mlflow(self, run_name: str = "fraud_detection_pipeline") -> str:
+        """Registra todo el experimento en MLflow."""
+        return self.trainer.log_training(
+            self.lstm, self.tabnet, self.data, self.results, run_name=run_name
+        )

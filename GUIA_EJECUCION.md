@@ -5,100 +5,197 @@
 > **Requisito:** Python **3.10** (no 3.14 — TensorFlow no soporta versiones mayores a 3.12)
 
 ```bash
+# Clonar repositorio
+git clone https://github.com/MauriErick24/MLOPS.git
+cd MLOPS
+
 # Crear entorno virtual con Python 3.10
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Linux/Mac
+python -m venv .venv
+
+# Activar entorno
+source .venv/bin/activate        # Linux/Mac
+.venv\Scripts\activate           # Windows
 
 # Instalar dependencias
 pip install -r requirements.txt
+pip install -e .
 ```
 
-**Si tu venv tiene Python 3.14** (error con tensorflow), elimina y recrea:
+**Si tu venv tiene Python 3.14** (error con tensorflow):
 ```bash
-rmdir /s /q venv
-"C:\Users\Truji\AppData\Local\Programs\Python\Python310\python.exe" -m venv venv
-venv\Scripts\activate
+# Eliminar venv existente
+rm -rf .venv                      # Linux/Mac
+rmdir /s /q .venv                 # Windows
+
+# Recrear con Python 3.10 explicito
+python3.10 -m venv .venv          # Linux/Mac
+py -3.10 -m venv .venv            # Windows (si py launcher esta instalado)
+# O especificar la ruta completa:
+# "C:\Users\TU_USUARIO\AppData\Local\Programs\Python\Python310\python.exe" -m venv .venv
+
+source .venv/bin/activate         # Linux/Mac
+.venv\Scripts\activate            # Windows
+
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ---
 
-## 2. Estructura del proyecto
+## 2. Obtener datos (DVC)
+
+El dataset esta trackeado con DVC. Despues de clonar:
+
+```bash
+# Instalar DVC (si no esta instalado)
+pip install dvc dvc-gdrive
+
+# Descargar datos desde Google Drive
+dvc pull
+```
+
+Esto descarga `data/raw/creditcard.csv` (~150MB).
+
+---
+
+## 3. Estructura del proyecto
 
 ```
 MLOPS/
-├── data/raw/dataset.csv          ← Dataset original (creditcard.csv)
+├── MLproject                         ← Declaracion reproducible MLflow
+├── python_env.yaml                   ← Entorno aislado
+├── mlflow.db                         ← Backend store SQLite (se crea al primer run)
+├── data/raw/creditcard.csv           ← Dataset original (via DVC)
 ├── deteccion_fraude/
-│   ├── config.py                 ← ExperimentConfig
-│   ├── dataset.py                ← FraudDataset + DatasetSplits + PreparedData
-│   ├── features.py               ← FraudFeatureEngineer + FraudPreprocessor
-│   ├── evaluation.py             ← FraudModelEvaluator
-│   ├── plots.py                  ← FraudVisualizer
+│   ├── config.py                     ← ExperimentConfig
+│   ├── dataset.py                    ← FraudDataset + DatasetSplits + PreparedData
+│   ├── features.py                   ← FraudFeatureEngineer + FraudPreprocessor
+│   ├── evaluation.py                 ← FraudModelEvaluator
+│   ├── plots.py                      ← FraudVisualizer
+│   ├── tracking.py                   ← MLflowFraudTrainer + Wrappers + Lineage
 │   └── modeling/
-│       ├── pipeline.py           ← FraudDetectionPipeline (fachada)
-│       ├── lstm.py               ← LSTMDetector + FocalLoss
-│       ├── tabnet.py             ← TabNetDetector
-│       ├── feature_selection.py  ← TabNetFeatureSelector
-│       ├── train.py              ← CLI entrenamiento
-│       └── predict.py            ← CLI inferencia
-├── models/                       ← Modelos y artifacts generados
-├── reports/figures/              ← Graficos generados
-└── tests/                        ← Tests unitarios
+│       ├── pipeline.py               ← FraudDetectionPipeline (fachada)
+│       ├── lstm.py                   ← LSTMDetector + FocalLoss
+│       ├── tabnet.py                 ← TabNetDetector
+│       ├── feature_selection.py      ← TabNetFeatureSelector
+│       └── train.py                  ← CLI profesional (fraude train/promote/compare)
+├── models/                           ← Modelos y artifacts generados
+├── reports/figures/                  ← Graficos generados
+└── tests/                            ← Tests unitarios
 ```
 
 ---
 
-## 3. Ejecucion del pipeline completo
+## 4. CLI profesional
 
-### Opcion A: Script unificado (recomendado)
+### Comandos disponibles
 
 ```bash
-python deteccion_fraude/modeling/train.py
+fraude --help                        # Ver comandos disponibles
+fraude train --help                  # Ver opciones de entrenamiento
+fraude promote --help                # Ver opciones de promocion
+fraude compare --help                # Ver opciones de comparacion
 ```
 
-Ejecuta todo el pipeline en secuencia:
-1. Carga y limpieza del dataset
-2. Particion estratificada 70/15/15
-3. Feature engineering (19 variables derivadas)
-4. Escalado (RobustScaler + StandardScaler)
-5. SMOTE (solo en train, ratio 0.3)
-6. Seleccion de features con TabNet
-7. Entrenamiento LSTM + TabNet
-8. Evaluacion con ajuste de umbral por ROI
-9. Guardado de modelos y artifacts en `models/`
-
-### Opcion B: Paso a paso
+### Entrenar modelos
 
 ```bash
-# 1. Cargar y particionar datos
-python deteccion_fraude/dataset.py
+# Entrenar con configuracion por defecto
+fraude train
 
-# 2. Generar features
-python deteccion_fraude/features.py
+# Entrenar con nombre de experimento personalizado
+fraude train --experiment "v2"
 
-# 3. Entrenar modelos
-python deteccion_fraude/modeling/train.py
-
-# 4. Ver resultados
-python deteccion_fraude/modeling/predict.py
-
-# 5. Generar graficos
-python deteccion_fraude/plots.py
+# Entrenar con nombre de run personalizado
+fraude train --run-name "experimento_enero"
 ```
 
-### Opcion C: Make (Linux/Mac)
+### Promover modelo a Production
 
 ```bash
-make data          # Cargar dataset
-make test          # Ejecutar tests
-make lint          # Verificar lint
-make format        # Formatear codigo
+# Promover el ultimo run a Production
+fraude promote
+
+# Promover un run especifico
+fraude promote --run-id abc123def456
+
+# Promover por metrica diferente (default: f1)
+fraude promote --metric roi
+```
+
+### Comparar runs
+
+```bash
+# Comparar todos los runs del experimento
+fraude compare
+
+# Comparar en un experimento especifico
+fraude compare --experiment "v2"
+```
+
+### Alternativa: python -m
+
+```bash
+python -m deteccion_fraude.modeling.train train
+python -m deteccion_fraude.modeling.train promote
+python -m deteccion_fraude.modeling.train compare
 ```
 
 ---
 
-## 4. Ejecucion de tests
+## 5. MLflow Tracking
+
+### Ver UI de MLflow
+
+```bash
+# Iniciar servidor MLflow (puerto 5000 por defecto)
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+
+# En otro terminal o con otro puerto
+mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
+```
+
+Abre `http://localhost:5000` en tu navegador.
+
+### Que se registra automaticamente
+
+| Tipo | Datos |
+|------|-------|
+| **Params** | sequence_length, smote_ratio, random_state, costs |
+| **Metrics** | f1, precision, recall, roc_auc, roi, threshold, training_time |
+| **Tags** | git_commit, dvc_status, environment, architecture, owner |
+| **Models** | LSTM (Keras), TabNet (sklearn) con signature |
+| **Artifacts** | 7 graficos (overview, feature importance, ROC/PR, confusion matrices) |
+
+### Model Registry
+
+Los modelos se promueven a "Production" con:
+
+```bash
+fraude promote
+```
+
+Esto:
+1. Compara F1 de LSTM vs TabNet
+2. Selecciona el ganador
+3. Lo registra en MLflow Model Registry
+4. Lo promueve a stage "Production"
+
+### Cargar modelo desde Registry
+
+```python
+import mlflow
+
+# Cargar modelo en Production
+model = mlflow.pyfunc.load_model("models:/fraud_lstm/Production")
+
+# Predecir
+predictions = model.predict(X_new)
+```
+
+---
+
+## 6. Ejecucion de tests
 
 ```bash
 python -m pytest tests/ -v
@@ -119,7 +216,7 @@ tests/test_features.py::test_feature_engineer_does_not_mutate_input PASSED
 
 ---
 
-## 5. Lint y formato
+## 7. Lint y formato
 
 ```bash
 # Verificar errores de lint
@@ -131,11 +228,14 @@ python -m ruff format --check
 # Auto-corregir
 python -m ruff check --fix
 python -m ruff format
+
+# Verificar tipos
+python -m mypy deteccion_fraude/ --ignore-missing-imports
 ```
 
 ---
 
-## 6. Configuracion del experimento
+## 8. Configuracion del experimento
 
 Todas las constantes estan en `deteccion_fraude/config.py`:
 
@@ -147,31 +247,45 @@ Todas las constantes estan en `deteccion_fraude/config.py`:
 | `false_negative_cost` | 150 | Costo de fraude no detectado |
 | `false_positive_cost` | 25 | Costo de falsa alarma |
 | `min_lstm_features` | 30 | Minimo de features para LSTM |
+| `mlflow_tracking_uri` | sqlite:///mlflow.db | Backend store MLflow |
+| `mlflow_experiment_name` | deteccion_fraude | Nombre del experimento |
 
 ---
 
-## 7. Artefactos generados
+## 9. Artefactos generados
 
-Tras ejecutar el pipeline, se generan en `models/`:
+### En `models/` (locales)
 
 | Archivo | Contenido |
 |---|---|
 | `lstm_fraud_detector.keras` | Modelo LSTM entrenado |
 | `tabnet_fraud_detector/` | Modelo TabNet entrenado |
-| `results.pkl` | Metricas, umbrales y feature importance |
-| `scaler.pkl` | RobustScaler y StandardScaler fitted |
 
-En `reports/figures/`:
+### En MLflow (`mlflow.db`)
+
+| Tipo | Contenido |
+|---|---|
+| **Params** | Hiperparametros del experimento |
+| **Metrics** | F1, precision, recall, ROC-AUC, ROI |
+| **Tags** | Git commit, DVC status, environment |
+| **Models** | LSTM + TabNet con signature |
+| **Figures** | 7 graficos de evaluacion |
+
+### En `reports/figures/`
 
 | Archivo | Contenido |
 |---|---|
+| `overview.png` | Distribucion de clases, montos, correlaciones |
+| `feature_importance.png` | Top 25 features + importancia acumulada |
+| `model_comparison.png` | Curvas ROC y Precision-Recall |
+| `confusion_matrices.png` | Matrices de confusion LSTM y TabNet |
 | `cm_lstm.png` | Matriz de confusion LSTM |
 | `cm_tabnet.png` | Matriz de confusion TabNet |
 | `results_summary.png` | Comparativa de metricas y ROI |
 
 ---
 
-## 8. Uso programatico
+## 10. Uso programatico
 
 ```python
 from deteccion_fraude.config import ExperimentConfig
@@ -180,14 +294,116 @@ from deteccion_fraude.features import FraudPreprocessor
 from deteccion_fraude.modeling.pipeline import FraudDetectionPipeline
 
 config = ExperimentConfig()
-df = FraudDataset.load(config.data_raw)
+df = FraudDataset.load(config.data_file)
 splits = FraudDataset.split(df, config)
 
 preprocessor = FraudPreprocessor(config)
 data = preprocessor.fit_transform(splits)
 
 pipeline = FraudDetectionPipeline(config, data)
-pipeline.select_features().train().evaluate().save_artifacts()
+pipeline.select_features().train().evaluate()
 
-print(pipeline.results)
+# Loggear en MLflow
+run_id = pipeline.log_to_mlflow()
+
+# Promover mejor modelo
+winner = pipeline.trainer.promote_best_model(run_id)
+
+print(f"Modelo ganador: {winner}")
+print(f"MLflow run: {run_id}")
+```
+
+---
+
+## 11. CI/CD (GitHub Actions)
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - run: pip install -e .
+      - run: ruff check deteccion_fraude/
+      - run: mypy deteccion_fraude/ --ignore-missing-imports
+      - run: pytest tests/ -v
+
+  train:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - run: pip install -e .
+      - run: fraude train --experiment "ci-${{ github.sha }}"
+      - run: fraude promote
+```
+
+---
+
+## 12. Solucion de problemas
+
+### Error: TensorFlow no encuentra GPU
+```bash
+python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+```
+
+### Error: mlflow.db bloqueado
+```bash
+# Cerrar UI antes de entrenar, o usar otro puerto
+mlflow ui --port 5001 --backend-store-uri sqlite:///mlflow.db
+```
+
+### Error: dataset no encontrado
+```bash
+# Verificar que DVC esta configurado
+dvc status
+
+# Descargar datos
+dvc pull
+```
+
+### Error: fraude command not found
+```bash
+# Reinstalar paquete en modo editable
+pip install -e .
+```
+
+### Error: Model Registry vacio
+```bash
+# Primero entrenar, luego promover
+fraude train
+fraude promote
+```
+
+### Error: Python 3.14 incompatible
+```bash
+# Eliminar venv y recrear con Python 3.10
+rm -rf .venv                        # Linux/Mac
+rmdir /s /q .venv                   # Windows
+
+python3.10 -m venv .venv            # Linux/Mac
+py -3.10 -m venv .venv              # Windows
+
+source .venv/bin/activate           # Linux/Mac
+.venv\Scripts\activate              # Windows
+
+pip install -r requirements.txt
+pip install -e .
 ```

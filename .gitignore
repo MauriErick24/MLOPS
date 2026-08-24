@@ -8,6 +8,13 @@ models/*.keras
 models/*.zip
 models/*.pkl
 
+# MLflow
+mlflow.db/
+mlruns/
+
+# Generated figures
+reports/figures/*.png
+
 # Agent config
 .agents
 skills-lock.json

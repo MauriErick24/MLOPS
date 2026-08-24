@@ -1,39 +1,39 @@
 graph LR
-    subgraph "Step 1: Load & Clean"
-        A["creditcard.csv<br/>284K rows × 50 cols"] -->|FraudDataset.load| B["DataFrame<br/>(nulos + dup eliminados)"]
+    subgraph "Step 1: Load and Clean"
+        A["creditcard.csv<br/>284K rows x 50 cols"] -->|"FraudDataset.load"| B["DataFrame<br/>nulos + dup eliminados"]
     end
 
     subgraph "Step 2: Split"
-        B -->|FraudDataset.split| C["DatasetSplits<br/>train 70% | val 15% | test 15%<br/>sorted by Time"]
+        B -->|"FraudDataset.split"| C["DatasetSplits<br/>train 70% | val 15% | test 15%<br/>sorted by Time"]
     end
 
     subgraph "Step 3: Feature Engineering"
-        C -->|FraudFeatureEngineer.transform| D["DataFrame<br/>(+22 engineered features)<br/>50 → 50 cols"]
+        C -->|"FraudFeatureEngineer.transform"| D["DataFrame<br/>+22 engineered features<br/>50 -> 50 cols"]
     end
 
-    subgraph "Step 4: Scaling & SMOTE"
-        D -->|RobustScaler + StandardScaler| E["Scaled DataFrame"]
-        E -->|SMOTE (ratio=0.30)| F["PreparedData<br/>X_train: (N×50)<br/>X_balanced: (M×50)<br/>X_validation: (42K×50)<br/>X_test: (42K×50)"]
+    subgraph "Step 4: Scaling and SMOTE"
+        D -->|"RobustScaler + StandardScaler"| E["Scaled DataFrame"]
+        E -->|"SMOTE ratio=0.30"| F["PreparedData<br/>X_train: N*50<br/>X_balanced: M*50<br/>X_validation: 42K*50<br/>X_test: 42K*50"]
     end
 
     subgraph "Step 5: Feature Selection"
-        F -->|TabNetFeatureSelector| G["PreparedData<br/>(filtered)<br/>X_train: (N×50) → (N×50)<br/>X_train_lstm: (N×30)<br/>selected: top-N features"]
+        F -->|"TabNetFeatureSelector"| G["PreparedData filtered<br/>X_train: N*50 to N*50<br/>X_train_lstm: N*30<br/>selected: top-N features"]
     end
 
     subgraph "Step 6: Train Models"
-        G -->|LSTMDetector.fit| H["LSTM Model<br/>BiLSTM(64→32) + FocalLoss<br/>sequences of 5"]
-        G -->|TabNetDetector.fit| I["TabNet Model<br/>n_d=32, n_a=32<br/>n_steps=5, gamma=1.3"]
+        G -->|"LSTMDetector.fit"| H["LSTM Model<br/>BiLSTM 64-32 + FocalLoss<br/>sequences of 5"]
+        G -->|"TabNetDetector.fit"| I["TabNet Model<br/>n_d=32, n_a=32<br/>n_steps=5, gamma=1.3"]
     end
 
     subgraph "Step 7: Evaluate"
-        H -->|predict_test| J["LSTM scores"]
-        I -->|predict_test| K["TabNet scores"]
-        J -->|FraudModelEvaluator| L["Results<br/>F1, ROI, Precision, Recall<br/>optimal threshold"]
-        K -->|FraudModelEvaluator| L
+        H -->|"predict_test"| J["LSTM scores"]
+        I -->|"predict_test"| K["TabNet scores"]
+        J -->|"FraudModelEvaluator"| L["Results<br/>F1, ROI, Precision, Recall<br/>optimal threshold"]
+        K -->|"FraudModelEvaluator"| L
     end
 
     subgraph "Step 8: Save"
-        L -->|pickle| M["models/results.pkl<br/>models/selected_features.pkl<br/>models/scalers.pkl"]
+        L -->|"pickle"| M["models/results.pkl<br/>models/selected_features.pkl<br/>models/scalers.pkl"]
     end
 
     style A fill:#ffecb3,stroke:#f9a825

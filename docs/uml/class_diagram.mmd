@@ -188,9 +188,3 @@ classDiagram
 
     FraudVisualizer --> ExperimentConfig : config
     FraudVisualizer ..> TabNetFeatureSelector : duck-typed
-
-    tab Trajectory {
-        ExperimentConfig --> FraudDataset : config
-        FraudDataset --> FraudPreprocessor : splits
-        FraudPreprocessor --> FraudDetectionPipeline : data
-    }

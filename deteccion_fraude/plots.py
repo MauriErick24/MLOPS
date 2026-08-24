@@ -1,5 +1,7 @@
 """Visualizaciones exploratorias y de evaluacion."""
 
+from pathlib import Path
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -75,8 +77,8 @@ class FraudVisualizer:
         logger.info(f"Overview guardado: {path}")
 
     @staticmethod
-    def plot_feature_importance(selector) -> None:
-        _fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    def plot_feature_importance(selector, figures_dir: Path) -> None:
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
         selector.feature_importance.tail(25).plot.barh(ax=axes[0], color="teal")
         axes[0].set_title("Feature importance")
         axes[1].plot(
@@ -88,11 +90,16 @@ class FraudVisualizer:
         axes[1].axhline(95, color="red", linestyle="--")
         axes[1].set_title("Importancia acumulada")
         plt.tight_layout()
-        plt.show()
+        path = figures_dir / "feature_importance.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(f"Feature importance guardado: {path}")
 
     @staticmethod
-    def plot_model_comparison(y_true, scores: dict[str, np.ndarray], results: dict) -> None:
-        _fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    def plot_model_comparison(
+        y_true, scores: dict[str, np.ndarray], results: dict, figures_dir: Path
+    ) -> None:
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
         for name, probabilities in scores.items():
             fpr, tpr, _ = roc_curve(y_true, probabilities)
             precision, recall, _ = precision_recall_curve(y_true, probabilities)
@@ -109,11 +116,14 @@ class FraudVisualizer:
             axis.legend()
             axis.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.show()
+        path = figures_dir / "model_comparison.png"
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(f"Curvas ROC/PR guardadas: {path}")
 
-        _fig, axes = plt.subplots(1, len(results), figsize=(12, 5))
+        fig2, axes2 = plt.subplots(1, len(results), figsize=(12, 5))
         for axis, (name, result), color in zip(
-            np.atleast_1d(axes), results.items(), ["Blues", "Oranges"]
+            np.atleast_1d(axes2), results.items(), ["Blues", "Oranges"]
         ):
             sns.heatmap(
                 result["cm"],
@@ -129,7 +139,10 @@ class FraudVisualizer:
                 f"R={result['recall']:.3f} F1={result['f1']:.3f}"
             )
         plt.tight_layout()
-        plt.show()
+        path2 = figures_dir / "confusion_matrices.png"
+        fig2.savefig(path2, dpi=150, bbox_inches="tight")
+        plt.close(fig2)
+        logger.info(f"Matrices de confusion guardadas: {path2}")
 
     def plot_confusion_matrix(self, cm: np.ndarray, model_name: str) -> None:
         fig, ax = plt.subplots(figsize=(6, 5))
