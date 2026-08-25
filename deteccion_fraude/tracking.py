@@ -217,7 +217,10 @@ class MLflowFraudTrainer:
         """Compara metricas entre runs del experimento."""
         exp_id = experiment or self.config.mlflow_experiment_name
         client = mlflow.tracking.MlflowClient()
-        runs = client.search_runs(experiment_ids=[exp_id])
+
+        experiment = client.get_experiment_by_name(exp_id)
+        runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+
         if not runs:
             logger.warning("No hay runs para comparar")
             return pd.DataFrame()
@@ -232,6 +235,7 @@ class MLflowFraudTrainer:
         df = pd.DataFrame(rows)
         if "run_id" in df.columns:
             df = df.sort_values("f1", ascending=False, na_position="last")
+
         logger.info(f"Comparacion de {len(df)} runs:")
         print(df.to_string(index=False))
         return df
