@@ -12,6 +12,9 @@ deteccion_fraude/
 │   ├── features.py
 │   ├── evaluation.py
 │   ├── plots.py
+│   ├── serving.py
+│   ├── tracking.py
+│   ├── api/
 │   └── modeling/
 ├── notebooks/fraude_detection_final_OOP.ipynb
 ├── models/
@@ -24,6 +27,9 @@ Antes de abrir el notebook, instale el proyecto en modo editable desde la raíz:
 python -m pip install -e .
 python -m pip install -r requirements-oop.txt
 ```
+
+`requirements-oop.txt` cubre solo lo que necesita el notebook. Para el ciclo
+MLOps completo (MLflow, DVC y la API de inferencia) use `requirements.txt`.
 
 Si el CSV está en otra ubicación, cambie solamente `data_file` al crear
 `ExperimentConfig` en el notebook. No agregue rutas absolutas dentro de los módulos.

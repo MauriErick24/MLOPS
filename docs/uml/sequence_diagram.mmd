@@ -8,6 +8,7 @@ sequenceDiagram
     participant LSTM as LSTMDetector
     participant TN as TabNetDetector
     participant E as FraudModelEvaluator
+    participant MT as MLflowFraudTrainer
 
     C->>C: ExperimentConfig()
     FD->>FD: load(data_file)
@@ -44,5 +45,12 @@ sequenceDiagram
     P->>E: evaluate(y_test, scores, name, threshold)
     E-->>P: metrics dict
 
-    P->>P: save_artifacts()
-    Note over P: Pickles results.pkl,<br/>selected_features.pkl,<br/>scalers.pkl
+    P->>P: save_serving_artifacts()
+    Note over P: ServingArtifacts.save()<br/>models/serving_artifacts.pkl:<br/>scalers, noise_mask, thresholds,<br/>selected_features, AmountStats
+
+    P->>MT: log_to_mlflow(run_name)
+    MT->>MT: log params, metrics, tags, figures
+    MT->>MT: log_model(lstm) + log_model(tabnet)
+    MT-->>P: run_id
+
+    Note over MT: `fraude promote` compara F1 y llama<br/>promote_best_model(run_id) -> stage Production

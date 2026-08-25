@@ -36,16 +36,23 @@ classDiagram
         +ndarray X_train_lstm
         +ndarray X_validation_lstm
         +ndarray X_test_lstm
-        +ndarray X_balanced
         +ndarray y_train
         +ndarray y_validation
         +ndarray y_test
-        +ndarray y_balanced
         +list~str~ feature_names
         +dict class_weights
         +object robust_scaler
         +object standard_scaler
+        +AmountStats amount_stats
         +apply_feature_selection(noise_mask, selected_features) None
+    }
+
+    class AmountStats {
+        <<dataclass, frozen>>
+        +float mean
+        +float std
+        +list~float~ log_bin_edges
+        +from_dataframe(dataframe)$ AmountStats
     }
 
     class FraudDataset {
@@ -59,7 +66,7 @@ classDiagram
     class FraudFeatureEngineer {
         <<service>>
         +ExperimentConfig config
-        +transform(dataframe) DataFrame
+        +transform(dataframe, amount_stats) DataFrame
     }
 
     class FraudPreprocessor {
@@ -104,12 +111,11 @@ classDiagram
         +fit_transform(data) PreparedData
     }
 
-    class FocalLoss {
-        <<loss, Keras serializable>>
+    class focal_loss_fn {
+        <<closure>>
         +float gamma
         +float alpha
-        +call(y_true, y_pred) Tensor
-        +get_config() dict
+        +focal_loss(y_true, y_pred) Tensor
     }
 
     class LSTMDetector {
@@ -152,6 +158,7 @@ classDiagram
         +LSTMDetector lstm
         +TabNetDetector tabnet
         +FraudModelEvaluator evaluator
+        +MLflowFraudTrainer trainer
         +dict results
         +dict validation_scores
         +dict test_scores
@@ -159,7 +166,79 @@ classDiagram
         +select_features() FraudDetectionPipeline
         +train() FraudDetectionPipeline
         +evaluate() dict
-        +save_artifacts() None
+        +save_serving_artifacts() Path
+        +log_to_mlflow(run_name) str
+    }
+
+    class MLflowFraudTrainer {
+        <<service>>
+        +ExperimentConfig config
+        +log_training(lstm, tabnet, data, results, run_name) str
+        +evaluate_with_mlflow(model, X_test, y_test, name) dict
+        +promote_best_model(run_id, metric) str
+        +compare_runs(experiment) DataFrame
+    }
+
+    class ServingArtifacts {
+        <<dataclass>>
+        +object robust_scaler
+        +object standard_scaler
+        +AmountStats amount_stats
+        +list~str~ robust_columns
+        +list~str~ standard_columns
+        +list~str~ feature_columns
+        +ndarray noise_mask
+        +list~str~ feature_names
+        +list~str~ selected_features
+        +dict thresholds
+        +int sequence_length
+        +from_training(config, data, selector, results)$ ServingArtifacts
+        +save(models_dir) Path
+        +load(models_dir)$ ServingArtifacts
+        +threshold_for(kind, default) float
+        +build_matrix(raw) DataFrame
+        +lstm_windows(matrix) ndarray
+    }
+
+    class ScoringModel {
+        <<dataclass>>
+        +str kind
+        +object model
+        +score(features) ndarray
+    }
+
+    class Transaction {
+        <<pydantic BaseModel>>
+        +float time
+        +float v1
+        +float v28
+        +float amount
+    }
+
+    class PredictionResponse {
+        <<pydantic BaseModel>>
+        +ModelMetadata model_metadata
+        +float decision_threshold
+        +int total_predictions
+        +int scored_from_index
+        +list~TransactionPrediction~ results
+        +str message
+    }
+
+    class FastAPI_app {
+        <<api>>
+        +lifespan() None
+        +read_root() ServiceStatus
+        +health(response) ServiceStatus
+        +predict(payload) PredictionResponse
+    }
+
+    class model_loader {
+        <<module>>
+        +str MODEL_NAME
+        +load_model() ScoringModel
+        +get_model_metadata() dict
+        +load_artifacts() ServingArtifacts
     }
 
     class tf_KerasLoss {
@@ -170,21 +249,41 @@ classDiagram
     FraudDetectionPipeline *-- LSTMDetector : lstm
     FraudDetectionPipeline *-- TabNetDetector : tabnet
     FraudDetectionPipeline *-- FraudModelEvaluator : evaluator
+    FraudDetectionPipeline *-- MLflowFraudTrainer : trainer
     FraudPreprocessor *-- FraudFeatureEngineer : engineer
 
-    FocalLoss --|> tf_KerasLoss : extends
+    focal_loss_fn ..> tf_KerasLoss : passed as loss
 
     FraudDetectionPipeline --> ExperimentConfig : config
     FraudDetectionPipeline --> PreparedData : data
 
-    LSTMDetector ..> FocalLoss : uses
+    LSTMDetector ..> focal_loss_fn : uses
     LSTMDetector ..> PreparedData : consumes
     TabNetDetector ..> PreparedData : consumes
     TabNetFeatureSelector ..> PreparedData : mutates
     FraudPreprocessor ..> DatasetSplits : consumes
     FraudPreprocessor ..> PreparedData : produces
+    FraudPreprocessor ..> AmountStats : records
     FraudDataset ..> DatasetSplits : produces
     FraudDataset ..> ExperimentConfig : param
 
     FraudVisualizer --> ExperimentConfig : config
     FraudVisualizer ..> TabNetFeatureSelector : duck-typed
+
+    PreparedData *-- AmountStats : amount_stats
+    FraudFeatureEngineer ..> AmountStats : optional param
+
+    FraudDetectionPipeline ..> ServingArtifacts : produces
+    ServingArtifacts *-- AmountStats : amount_stats
+    ServingArtifacts ..> FraudFeatureEngineer : reapplies
+
+    FastAPI_app ..> model_loader : bootstraps
+    FastAPI_app ..> ServingArtifacts : build_matrix
+    FastAPI_app ..> ScoringModel : score
+    FastAPI_app ..> Transaction : validates
+    FastAPI_app ..> PredictionResponse : returns
+    model_loader ..> ScoringModel : wraps flavor
+    model_loader ..> ServingArtifacts : loads pickle
+
+    note for Transaction "v1..v28 son 28 campos float. Alias = columna del dataset (V1..V28); populate_by_name acepta ambas formas."
+    note for ServingArtifacts "El Registry guarda el modelo pero no el preprocesamiento que lo alimenta."

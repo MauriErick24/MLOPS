@@ -1,8 +1,75 @@
 # Reporte de Modificaciones — MLOPS/deteccion_fraude
 
-Fecha: 2026-08-19
+---
+
+# Entrada 2026-08-25 — Capa de inferencia FastAPI
+
+## Resumen
+
+Se expuso el modelo promovido a Production por HTTP. El Model Registry
+guardaba el modelo pero no el preprocesamiento que lo alimenta, así que un
+modelo en Production no podía puntuar una transacción cruda.
+
+## Archivos nuevos
+
+| Archivo | Contenido |
+|---|---|
+| `deteccion_fraude/serving.py` | `ServingArtifacts` (scalers, `noise_mask`, features seleccionadas, umbrales), `ScoringModel` y `score_transactions()` |
+| `deteccion_fraude/api/schemas.py` | Contratos Pydantic v2: `Transaction` (30 columnas), `PredictionRequest/Response` |
+| `deteccion_fraude/api/model_loader.py` | Resolución de versión y flavor desde el Registry |
+| `deteccion_fraude/api/app.py` | App FastAPI: `GET /`, `GET /health`, `POST /predict` |
+| `tests/test_serving.py` | 11 tests de preprocesamiento y ventanas |
+| `tests/test_api.py` | 14 tests de endpoints con modelo simulado |
+
+## Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `features.py` | `AmountStats`; `transform()` acepta `amount_stats` opcional |
+| `dataset.py` | `PreparedData` gana el campo `amount_stats` |
+| `modeling/pipeline.py` | `save_serving_artifacts()` |
+| `modeling/train.py` | `fraude train` persiste artefactos; nuevo comando `fraude serve` |
+| `requirements.txt` | `fastapi`, `uvicorn`, `pydantic`, `httpx` explícitos |
+| `MLproject`, `Makefile` | Entry points y targets `promote` / `serve` |
+
+## Bug corregido: `Amount_zscore` con lotes pequeños
+
+**Archivo:** `deteccion_fraude/features.py`
+
+**Problema:** `Amount_zscore` se calculaba con `scipy.stats.zscore` sobre el
+lote. Con una sola transacción la desviación estándar es 0, el z-score sale
+`NaN` y el `dropna()` del final de `transform()` descartaba la fila entera.
+Una petición de una transacción — el caso de uso principal de la API —
+devolvía cero resultados sin error visible.
+
+**Fix:** `AmountStats` persiste `mean`, `std` y los bordes de bin del
+entrenamiento. En inferencia se reutilizan en vez de recalcularlos por lote.
+Los valores fuera del rango de entrenamiento se recortan con `np.clip` para
+que `pd.cut` no produzca `NaN`.
+
+**Sin impacto en entrenamiento:** durante `fit_transform` los estadísticos se
+registran pero no se aplican; las matrices de entrenamiento son idénticas.
+
+## Limitación conocida
+
+`Amount_roll_*` y `Transaction_frequency` siguen calculándose sobre el lote
+recibido, de modo que un lote pequeño no reproduce el contexto de
+entrenamiento. Resolverlo requiere un feature store con el historial del
+titular. Está documentado en `ARQUITECTURA.md` y `GUIA_EJECUCION.md`.
+
+## Verificación
+
+| Check | Estado |
+|---|---|
+| `pytest tests/` | 33/33 passed |
+| `ruff check` | All checks passed |
+| Entrenamiento completo | TabNet F1=0.7917 ROI=242%, LSTM F1=0.7692 ROI=192% |
+| `fraude promote` | TabNet v1 promovido a Production |
+| `POST /predict` con datos reales | 5/6 correctas (1 falso negativo con probabilidad 0.742 frente a umbral 0.792) |
 
 ---
+
+# Entrada 2026-08-19 — Implementación OOP y corrección de bugs
 
 ## Resumen
 
