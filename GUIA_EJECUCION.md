@@ -69,16 +69,21 @@ MLOPS/
 ├── deteccion_fraude/
 │   ├── config.py                     ← ExperimentConfig
 │   ├── dataset.py                    ← FraudDataset + DatasetSplits + PreparedData
-│   ├── features.py                   ← FraudFeatureEngineer + FraudPreprocessor
+│   ├── features.py                   ← FraudFeatureEngineer + FraudPreprocessor + AmountStats
 │   ├── evaluation.py                 ← FraudModelEvaluator
 │   ├── plots.py                      ← FraudVisualizer
+│   ├── serving.py                    ← ServingArtifacts + ScoringModel (preprocesamiento en inferencia)
 │   ├── tracking.py                   ← MLflowFraudTrainer + Wrappers + Lineage
+│   ├── api/
+│   │   ├── app.py                    ← FastAPI (/, /health, /predict)
+│   │   ├── model_loader.py           ← Carga del modelo Production desde el Registry
+│   │   └── schemas.py                ← Contratos Pydantic v2
 │   └── modeling/
 │       ├── pipeline.py               ← FraudDetectionPipeline (fachada)
 │       ├── lstm.py                   ← LSTMDetector + FocalLoss
 │       ├── tabnet.py                 ← TabNetDetector
 │       ├── feature_selection.py      ← TabNetFeatureSelector
-│       └── train.py                  ← CLI profesional (fraude train/promote/compare)
+│       └── train.py                  ← CLI profesional (fraude train/promote/compare/serve)
 ├── models/                           ← Modelos y artifacts generados
 ├── reports/figures/                  ← Graficos generados
 └── tests/                            ← Tests unitarios
@@ -95,6 +100,7 @@ fraude --help                        # Ver comandos disponibles
 fraude train --help                  # Ver opciones de entrenamiento
 fraude promote --help                # Ver opciones de promocion
 fraude compare --help                # Ver opciones de comparacion
+fraude serve --help                  # Ver opciones de la API de inferencia
 ```
 
 ### Entrenar modelos
@@ -139,6 +145,7 @@ fraude compare --experiment "v2"
 python -m deteccion_fraude.modeling.train train
 python -m deteccion_fraude.modeling.train promote
 python -m deteccion_fraude.modeling.train compare
+python -m deteccion_fraude.modeling.train serve
 ```
 
 ---
@@ -195,7 +202,113 @@ predictions = model.predict(X_new)
 
 ---
 
-## 6. Ejecucion de tests
+## 6. API de inferencia (FastAPI + Pydantic)
+
+Sirve el modelo promovido a Production reaplicando el mismo preprocesamiento
+que se uso en entrenamiento.
+
+### Requisitos previos
+
+```bash
+fraude train      # entrena y genera models/serving_artifacts.pkl
+fraude promote    # registra el ganador en Production
+```
+
+Sin estos dos pasos la API arranca en modo **Degradado** y `/predict` responde
+503 con la instruccion correspondiente.
+
+### Levantar el servidor
+
+```bash
+fraude serve                                  # http://127.0.0.1:8000
+fraude serve --host 0.0.0.0 --port 8080       # exponer en la red
+fraude serve --reload                         # desarrollo
+
+# Alternativa directa con uvicorn
+uvicorn deteccion_fraude.api.app:app --port 8000
+```
+
+Documentacion interactiva (Swagger UI) en `http://127.0.0.1:8000/docs`.
+
+### Endpoints
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| GET | `/` | Identidad del modelo servido (nombre, version, run_id, stage, flavor) |
+| GET | `/health` | Readiness probe: 200 si esta Online, 503 si esta Degradado |
+| POST | `/predict` | Puntua un lote cronologico de transacciones |
+
+### Ejemplo de peticion
+
+Cada transaccion lleva las 30 columnas del dataset: `Time`, `V1`..`V28`, `Amount`.
+Los campos aceptan tanto el alias del dataset (`V14`) como el nombre snake_case (`v14`).
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": [
+      {"Time": 0.0, "V1": -1.36, "V2": -0.07, "V3": 2.54, "V4": 1.38, "V5": -0.34,
+       "V6": 0.46, "V7": 0.24, "V8": 0.10, "V9": 0.36, "V10": 0.09, "V11": -0.55,
+       "V12": -0.62, "V13": -0.99, "V14": -0.31, "V15": 1.47, "V16": -0.47,
+       "V17": 0.21, "V18": 0.03, "V19": 0.40, "V20": 0.25, "V21": -0.02,
+       "V22": 0.28, "V23": -0.11, "V24": 0.07, "V25": 0.13, "V26": -0.19,
+       "V27": 0.13, "V28": -0.02, "Amount": 149.62}
+    ]
+  }'
+```
+
+### Respuesta
+
+```json
+{
+  "model_metadata": {
+    "name": "fraud_tabnet", "version": "3", "run_id": "abc123",
+    "stage": "Production", "flavor": "tabnet"
+  },
+  "decision_threshold": 0.284,
+  "total_predictions": 1,
+  "scored_from_index": 0,
+  "results": [
+    {
+      "index": 0,
+      "prediction_code": 0,
+      "diagnosis": "Legitima (0)",
+      "fraud_probability": 0.0142,
+      "confidence_score": 98.58,
+      "high_risk_flag": 0
+    }
+  ],
+  "message": "Inferencia completada con exito."
+}
+```
+
+El `decision_threshold` no es 0.5: es el umbral que maximizo el ROI en
+validacion durante el entrenamiento, persistido en los artefactos.
+
+### Consideraciones de inferencia
+
+| Tema | Comportamiento |
+|---|---|
+| **Orden del lote** | La lista se trata como una secuencia cronologica. |
+| **Modelo LSTM** | Necesita `sequence_length` (5) transacciones para formar una ventana; las primeras 4 no reciben score y `scored_from_index` lo indica. Un lote menor a 5 devuelve 422. |
+| **Modelo TabNet** | Puntua fila a fila, `scored_from_index` es 0. |
+| **`Amount_zscore` / `Amount_log_cat`** | Usan los estadisticos fijados en entrenamiento (`AmountStats`), no los del lote, para que una sola transaccion sea puntuable. |
+| **Variables de ventana** | `Amount_roll_*` y `Transaction_frequency` se calculan sobre el lote recibido: un lote pequeno no reproduce exactamente el contexto de entrenamiento. Eliminar esa diferencia requiere un feature store, fuera del alcance de esta capa. |
+
+### Seleccion del modelo servido
+
+Por defecto la API resuelve automaticamente cual de `fraud_tabnet` / `fraud_lstm`
+esta en Production (si ambos, el promovido mas recientemente). Para forzar uno:
+
+```bash
+export FRAUD_MODEL_NAME=fraud_lstm     # Linux/Mac
+$env:FRAUD_MODEL_NAME="fraud_lstm"     # Windows PowerShell
+```
+
+---
+
+## 7. Ejecucion de tests
 
 ```bash
 python -m pytest tests/ -v
@@ -203,20 +316,17 @@ python -m pytest tests/ -v
 
 Salida esperada:
 ```
-tests/test_data.py::test_load_drops_duplicates PASSED
-tests/test_data.py::test_split_counts_sum_to_total PASSED
-tests/test_data.py::test_split_preserves_class_proportion PASSED
-tests/test_data.py::test_split_sorted_by_time PASSED
-tests/test_evaluation.py::test_evaluator_returns_complete_confusion_matrix PASSED
-tests/test_evaluation.py::test_threshold_is_inside_search_interval PASSED
-tests/test_features.py::test_feature_engineer_creates_all_configured_columns PASSED
-tests/test_features.py::test_feature_engineer_does_not_mutate_input PASSED
-8 passed
+tests/test_api.py ..............                                     [ 42%]
+tests/test_data.py ....                                              [ 54%]
+tests/test_evaluation.py ..                                          [ 60%]
+tests/test_features.py ..                                            [ 66%]
+tests/test_serving.py ...........                                    [100%]
+33 passed
 ```
 
 ---
 
-## 7. Lint y formato
+## 8. Lint y formato
 
 ```bash
 # Verificar errores de lint
@@ -235,7 +345,7 @@ python -m mypy deteccion_fraude/ --ignore-missing-imports
 
 ---
 
-## 8. Configuracion del experimento
+## 9. Configuracion del experimento
 
 Todas las constantes estan en `deteccion_fraude/config.py`:
 
@@ -252,7 +362,7 @@ Todas las constantes estan en `deteccion_fraude/config.py`:
 
 ---
 
-## 9. Artefactos generados
+## 10. Artefactos generados
 
 ### En `models/` (locales)
 
@@ -260,6 +370,7 @@ Todas las constantes estan en `deteccion_fraude/config.py`:
 |---|---|
 | `lstm_fraud_detector.keras` | Modelo LSTM entrenado |
 | `tabnet_fraud_detector/` | Modelo TabNet entrenado |
+| `serving_artifacts.pkl` | Scalers ajustados, mascara de ruido, features seleccionadas, umbrales y `AmountStats`. Lo consume la API. |
 
 ### En MLflow (`mlflow.db`)
 
@@ -285,7 +396,7 @@ Todas las constantes estan en `deteccion_fraude/config.py`:
 
 ---
 
-## 10. Uso programatico
+## 11. Uso programatico
 
 ```python
 from deteccion_fraude.config import ExperimentConfig
@@ -303,6 +414,9 @@ data = preprocessor.fit_transform(splits)
 pipeline = FraudDetectionPipeline(config, data)
 pipeline.select_features().train().evaluate()
 
+# Persistir el preprocesamiento que necesita la API
+pipeline.save_serving_artifacts()
+
 # Loggear en MLflow
 run_id = pipeline.log_to_mlflow()
 
@@ -315,7 +429,7 @@ print(f"MLflow run: {run_id}")
 
 ---
 
-## 11. CI/CD (GitHub Actions)
+## 12. CI/CD (GitHub Actions)
 
 ```yaml
 # .github/workflows/ci.yml
@@ -357,7 +471,7 @@ jobs:
 
 ---
 
-## 12. Solucion de problemas
+## 13. Solucion de problemas
 
 ### Error: TensorFlow no encuentra GPU
 ```bash
@@ -390,6 +504,31 @@ pip install -e .
 # Primero entrenar, luego promover
 fraude train
 fraude promote
+```
+
+### La API responde 503 "No hay modelo en Production"
+```bash
+# El Registry no tiene ningun modelo promovido
+fraude train
+fraude promote
+# Reiniciar la API: el modelo se carga una sola vez al arrancar
+fraude serve
+```
+
+### La API responde 503 "Faltan los artefactos de inferencia"
+```bash
+# models/serving_artifacts.pkl se genera al final de 'fraude train'.
+# Si entreno con una version anterior del pipeline, reentrene:
+fraude train
+```
+
+### La API responde 422 con un lote de pocas transacciones
+El modelo en Production es el LSTM, que necesita ventanas de 5 transacciones
+consecutivas. Envie al menos 5 transacciones en `data`, o promueva TabNet:
+
+```bash
+$env:FRAUD_MODEL_NAME="fraud_tabnet"    # Windows PowerShell
+fraude serve
 ```
 
 ### Error: Python 3.14 incompatible

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -16,20 +17,65 @@ if TYPE_CHECKING:
 app = typer.Typer()
 
 
+@dataclass(frozen=True)
+class AmountStats:
+    """Estadisticos de Amount fijados en entrenamiento para reusar en inferencia.
+
+    `Amount_zscore` y `Amount_log_cat` se calculan por lote: sobre una sola
+    transaccion el z-score es NaN y los bins dependen del min/max del lote.
+    Persistir estos valores hace la inferencia determinista e independiente
+    del tamano del batch.
+    """
+
+    mean: float
+    std: float
+    log_bin_edges: list[float]
+
+    @classmethod
+    def from_dataframe(cls, dataframe: pd.DataFrame) -> "AmountStats":
+        """Calcula los estadisticos sobre el split de entrenamiento crudo."""
+        amount = dataframe["Amount"]
+        _, edges = pd.cut(np.log1p(amount), bins=10, labels=False, retbins=True)
+        return cls(
+            mean=float(amount.mean()),
+            std=float(amount.std(ddof=0)),
+            log_bin_edges=[float(edge) for edge in edges],
+        )
+
+
 class FraudFeatureEngineer:
     """Crea variables derivadas a partir del dataset crudo."""
 
     def __init__(self, config: ExperimentConfig) -> None:
         self.config = config
 
-    def transform(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Aplica feature engineering sin mutar el input."""
+    def transform(
+        self, dataframe: pd.DataFrame, amount_stats: AmountStats | None = None
+    ) -> pd.DataFrame:
+        """Aplica feature engineering sin mutar el input.
+
+        Con `amount_stats` las variables derivadas de Amount usan los
+        estadisticos de entrenamiento en vez de los del lote recibido, que es
+        lo que permite servir lotes pequenos desde la API.
+        """
         df = dataframe.copy()
         v_columns = self.config.pca_columns
 
         df["Amount_log"] = np.log1p(df["Amount"])
-        df["Amount_log_cat"] = pd.cut(np.log1p(df["Amount"]), bins=10, labels=False).astype(float)
-        df["Amount_zscore"] = np.abs(st.zscore(df["Amount"]))
+        if amount_stats is None:
+            df["Amount_log_cat"] = pd.cut(np.log1p(df["Amount"]), bins=10, labels=False).astype(
+                float
+            )
+            df["Amount_zscore"] = np.abs(st.zscore(df["Amount"]))
+        else:
+            edges = amount_stats.log_bin_edges
+            clipped = np.clip(np.log1p(df["Amount"]), edges[0], edges[-1])
+            df["Amount_log_cat"] = pd.cut(
+                clipped, bins=edges, labels=False, include_lowest=True
+            ).astype(float)
+            df["Amount_zscore"] = np.abs(
+                (df["Amount"] - amount_stats.mean) / (amount_stats.std + 1e-9)
+            )
 
         df["Time_hour"] = (df["Time"] / 3600) % 24
         df["Transaction_frequency"] = df.groupby("Time_hour")["Time_hour"].transform("count")
@@ -71,6 +117,7 @@ class FraudPreprocessor:
         """Transforma splits en PreparedData con scaling."""
         from deteccion_fraude.dataset import PreparedData
 
+        self.amount_stats = AmountStats.from_dataframe(splits.df_train)
         df_train = self.engineer.transform(splits.df_train)
         df_val = self.engineer.transform(splits.df_val)
         df_test = self.engineer.transform(splits.df_test)
@@ -117,4 +164,5 @@ class FraudPreprocessor:
             class_weights=class_weights,
             robust_scaler=robust_scaler,
             standard_scaler=standard_scaler,
+            amount_stats=self.amount_stats,
         )
