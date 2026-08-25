@@ -65,7 +65,14 @@ def promote(
 
     if run_id is None:
         client = mlflow.tracking.MlflowClient()
-        runs = client.search_runs(experiment_ids=[experiment])
+        exp_obj = client.get_experiment_by_name(experiment)
+        if exp_obj is None:
+            logger.error(f"Experimento '{experiment}' no existe en MLflow")
+            raise typer.Exit(code=1)
+        runs = client.search_runs(
+            experiment_ids=[exp_obj.experiment_id],
+            order_by=["start_time DESC"],
+        )
         if not runs:
             logger.error("No hay runs en este experimento")
             raise typer.Exit(code=1)
