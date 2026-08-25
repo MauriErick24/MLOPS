@@ -197,6 +197,11 @@ class MLflowFraudTrainer:
         model_uri = f"runs:/{run_id}/{winner}_model"
         model_name = f"fraud_{winner}"
 
+        try:
+            client.get_registered_model(model_name)
+        except mlflow.exceptions.MlflowException:
+            client.create_registered_model(model_name)
+
         result = client.create_model_version(
             name=model_name,
             source=model_uri,
@@ -215,12 +220,13 @@ class MLflowFraudTrainer:
 
     def compare_runs(self, experiment: str | None = None) -> pd.DataFrame:
         """Compara metricas entre runs del experimento."""
-        exp_id = experiment or self.config.mlflow_experiment_name
+        exp_name = experiment or self.config.mlflow_experiment_name
         client = mlflow.tracking.MlflowClient()
-
-        experiment = client.get_experiment_by_name(exp_id)
-        runs = client.search_runs(experiment_ids=[experiment.experiment_id])
-
+        experiment_obj = client.get_experiment_by_name(exp_name)
+        if experiment_obj is None:
+            logger.error(f"Experimento '{exp_name}' no existe en MLflow")
+            return pd.DataFrame()
+        runs = client.search_runs(experiment_ids=[experiment_obj.experiment_id])
         if not runs:
             logger.warning("No hay runs para comparar")
             return pd.DataFrame()
@@ -233,9 +239,8 @@ class MLflowFraudTrainer:
             rows.append(row)
 
         df = pd.DataFrame(rows)
-        if "run_id" in df.columns:
+        if "run_id" in df.columns and "f1" in df.columns:
             df = df.sort_values("f1", ascending=False, na_position="last")
-
         logger.info(f"Comparacion de {len(df)} runs:")
         print(df.to_string(index=False))
         return df
