@@ -6,10 +6,11 @@ Archivos Mermaid (.mmd) — visualizables en GitHub, GitLab, VS Code (extensión
 
 | Diagrama | Archivo | Descripción |
 |---|---|---|
-| Clases | `class_diagram.mmd` | 13 clases, composiciones, dependencias |
-| Secuencia | `sequence_diagram.mmd` | Flujo de ejecución de train.py |
-| Componentes | `component_diagram.mmd` | Arquitectura por capas (CLI → Core → Modeling → DVC) |
-| Flujo de Datos | `data_flow_diagram.mmd` | Transformaciones del dataset paso a paso |
+| Clases | `class_diagram.mmd` | Clases del dominio, serving y API; composiciones y dependencias |
+| Secuencia (entrenamiento) | `sequence_diagram.mmd` | Flujo de `fraude train` hasta el registro en MLflow |
+| Secuencia (inferencia) | `inference_sequence_diagram.mmd` | Arranque de la API y recorrido de un `POST /predict` |
+| Componentes | `component_diagram.mmd` | Arquitectura por capas (CLI → Serving → Core → MLflow/DVC) |
+| Flujo de Datos | `data_flow_diagram.mmd` | Del CSV crudo al veredicto servido por HTTP |
 
 ## Cómo visualizar
 

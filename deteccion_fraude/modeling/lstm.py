@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 
 from imblearn.over_sampling import SMOTE
+import keras
 from loguru import logger
 import numpy as np
 import tensorflow as tf
@@ -13,10 +14,38 @@ from deteccion_fraude.config import ExperimentConfig
 from deteccion_fraude.dataset import PreparedData
 
 
-def _focal_loss_fn(gamma: float = 2.0, alpha: float = 0.75):
-    """Closure compatible con Keras 3: retorna loss escalar por batch."""
+@keras.saving.register_keras_serializable(package="deteccion_fraude")
+class FocalLoss(keras.losses.Loss):
+    """Focal Loss para desbalance de clases, serializable por Keras."""
 
-    def focal_loss(y_true, y_pred):
+    def __init__(self, gamma: float = 2.0, alpha: float = 0.75, **kwargs):
+        super().__init__(**kwargs)
+        self.gamma = gamma
+        self.alpha = alpha
+
+    def call(self, y_true, y_pred):
+        y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
+        pt = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
+        alpha_t = tf.where(tf.equal(y_true, 1), self.alpha, 1 - self.alpha)
+        focal_weight = alpha_t * K.pow(1.0 - pt, self.gamma)
+        cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
+        return K.mean(focal_weight * cross_entropy)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"gamma": self.gamma, "alpha": self.alpha})
+        return config
+
+
+def focal_loss(y_true, y_pred):
+    """Wrapper compatible con modelos guardados antes de FocalLoss."""
+    return FocalLoss(gamma=2.0, alpha=0.75)(y_true, y_pred)
+
+
+def _focal_loss_fn(gamma: float = 2.0, alpha: float = 0.75):
+    """Closure para entrenamiento: funciona como Keras 3 loss raw."""
+
+    def focal_loss_fn(y_true, y_pred):
         y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
         pt = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
         alpha_t = tf.where(tf.equal(y_true, 1), alpha, 1 - alpha)
@@ -24,7 +53,7 @@ def _focal_loss_fn(gamma: float = 2.0, alpha: float = 0.75):
         cross_entropy = -y_true * K.log(y_pred) - (1 - y_true) * K.log(1 - y_pred)
         return K.mean(focal_weight * cross_entropy)
 
-    return focal_loss
+    return focal_loss_fn
 
 
 class LSTMDetector:

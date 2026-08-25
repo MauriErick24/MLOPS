@@ -34,6 +34,7 @@ class PreparedData:
     class_weights: dict[int, float]
     robust_scaler: object
     standard_scaler: object
+    amount_stats: object
 
     def apply_feature_selection(
         self, noise_mask: np.ndarray, selected_features: list[str]

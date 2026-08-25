@@ -67,6 +67,30 @@ data: requirements
 	$(PYTHON_INTERPRETER) deteccion_fraude/dataset.py
 
 
+## Train both models and log the run to MLflow
+.PHONY: train
+train:
+	$(PYTHON_INTERPRETER) -m deteccion_fraude.modeling.train train
+
+
+## Promote the best model to Production in the MLflow Model Registry
+.PHONY: promote
+promote:
+	$(PYTHON_INTERPRETER) -m deteccion_fraude.modeling.train promote
+
+
+## Serve the Production model over HTTP (Swagger at /docs)
+.PHONY: serve
+serve:
+	$(PYTHON_INTERPRETER) -m deteccion_fraude.modeling.train serve
+
+
+## Launch the MLflow tracking UI
+.PHONY: mlflow-ui
+mlflow-ui:
+	mlflow ui --backend-store-uri sqlite:///mlflow.db
+
+
 #################################################################################
 # Self Documenting Commands                                                     #
 #################################################################################

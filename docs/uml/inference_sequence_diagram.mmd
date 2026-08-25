@@ -1,0 +1,57 @@
+sequenceDiagram
+    autonumber
+    actor Cliente
+    participant API as FastAPI app
+    participant ML as model_loader
+    participant REG as MLflow Registry
+    participant SA as ServingArtifacts
+    participant FE as FraudFeatureEngineer
+    participant SM as ScoringModel
+
+    rect rgb(240, 248, 255)
+        Note over API,REG: Arranque del proceso (una sola vez, en lifespan)
+        API->>ML: load_model()
+        ML->>REG: get_latest_versions(name, stages=["Production"])
+        REG-->>ML: ModelVersion (name, version, run_id)
+        ML->>REG: load_model("models:/fraud_tabnet/1")
+        Note over ML: sklearn para TabNet, keras para LSTM,<br/>fallback a pyfunc si el flavor falla
+        REG-->>ML: modelo
+        ML-->>API: ScoringModel(kind, model)
+        API->>ML: load_artifacts()
+        ML->>SA: ServingArtifacts.load(models_dir)
+        SA-->>API: artefactos
+        Note over API: Si falta modelo o artefactos:<br/>status "Degradado" y /predict responde 503
+    end
+
+    rect rgb(245, 255, 245)
+        Note over Cliente,SM: Peticion de inferencia
+        Cliente->>API: POST /predict {"data": [Transaction, ...]}
+        API->>API: Pydantic valida las 30 columnas
+        Note over API: Rechaza 422 si falta una V,<br/>si Amount < 0 o si el lote esta vacio
+        API->>API: model_dump(by_alias=True) -> DataFrame
+
+        API->>SA: build_matrix(raw)
+        SA->>FE: transform(raw, amount_stats)
+        Note over FE: Amount_zscore y Amount_log_cat usan<br/>los estadisticos de entrenamiento,<br/>no los del lote
+        FE-->>SA: DataFrame con 50 features
+        SA->>SA: robust_scaler.transform + standard_scaler.transform
+        SA->>SA: aplicar noise_mask
+        SA-->>API: matriz (n x feature_names)
+
+        alt modelo LSTM
+            API->>SA: lstm_windows(matrix)
+            SA-->>API: ventanas 3D (n-4, 5, k)
+            Note over SA: ValueError -> 422 si el lote tiene < 5 filas
+            API->>SM: score(windows)
+            SM-->>API: probabilidades (offset = 4)
+        else modelo TabNet
+            API->>SM: score(matrix)
+            SM-->>API: predict_proba[:, 1] (offset = 0)
+        end
+
+        API->>SA: threshold_for(kind)
+        SA-->>API: umbral optimizado por ROI en validacion
+        API->>API: prediction = probability > threshold
+        API-->>Cliente: PredictionResponse
+        Note over Cliente: model_metadata, decision_threshold,<br/>scored_from_index y un veredicto por transaccion
+    end

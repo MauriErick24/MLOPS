@@ -24,3 +24,27 @@ entry_points:
         type: str
         default: "deteccion_fraude"
         description: "Nombre del experimento MLflow"
+
+  promote:
+    command: "python -m deteccion_fraude.modeling.train promote --experiment {experiment} --metric {metric}"
+    parameters:
+      experiment:
+        type: str
+        default: "deteccion_fraude"
+        description: "Nombre del experimento MLflow"
+      metric:
+        type: str
+        default: "f1"
+        description: "Metrica para seleccionar el modelo ganador"
+
+  serve:
+    command: "python -m deteccion_fraude.modeling.train serve --host {host} --port {port}"
+    parameters:
+      host:
+        type: str
+        default: "127.0.0.1"
+        description: "Interfaz de escucha de la API"
+      port:
+        type: str
+        default: "8000"
+        description: "Puerto HTTP de la API"

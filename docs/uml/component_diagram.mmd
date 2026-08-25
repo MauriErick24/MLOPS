@@ -1,6 +1,19 @@
 graph TB
     subgraph "CLI Layer"
-        train["<b>train.py</b><br/>python deteccion_fraude/modeling/train.py"]
+        train["<b>fraude train</b><br/>entrena y registra en MLflow"]
+        promote["<b>fraude promote</b><br/>promueve el ganador a Production"]
+        serve["<b>fraude serve</b><br/>levanta uvicorn"]
+    end
+
+    subgraph "Serving Layer (deteccion_fraude/api/)"
+        api["<b>FastAPI app</b><br/>GET / &middot; GET /health &middot; POST /predict"]
+        schemas["<b>schemas.py</b><br/>Pydantic v2: Transaction,<br/>PredictionRequest/Response"]
+        loader["<b>model_loader.py</b><br/>resuelve version + flavor"]
+    end
+
+    subgraph "Inference Bridge (deteccion_fraude/serving.py)"
+        artifacts["<b>ServingArtifacts</b><br/>scalers + noise_mask +<br/>thresholds + AmountStats"]
+        scoring["<b>ScoringModel</b><br/>score() uniforme por flavor"]
     end
 
     subgraph "Core Layer (deteccion_fraude/)"
@@ -10,6 +23,7 @@ graph TB
         preprocessor["<b>FraudPreprocessor</b><br/>scalers + SMOTE + class weights"]
         evaluator["<b>FraudModelEvaluator</b><br/>threshold optimization + metrics"]
         visualizer["<b>FraudVisualizer</b><br/>6 plotting methods"]
+        tracking["<b>MLflowFraudTrainer</b><br/>log, register, promote, compare"]
     end
 
     subgraph "Modeling Layer (deteccion_fraude/modeling/)"
@@ -36,10 +50,17 @@ graph TB
         gdrive["Google Drive<br/>remote: gdrive://..."]
     end
 
+    subgraph "MLflow"
+        registry["Model Registry<br/>fraud_tabnet / fraud_lstm<br/>stage: Production"]
+        store["Backend store<br/>sqlite:///mlflow.db"]
+        pkl[("models/serving_artifacts.pkl")]
+    end
+
     train --> config
     train --> dataset
     train --> preprocessor
     train --> pipeline
+    promote --> tracking
 
     dataset --> splits
     preprocessor --> features
@@ -49,6 +70,8 @@ graph TB
     pipeline --> lstm
     pipeline --> tabnet
     pipeline --> evaluator
+    pipeline --> tracking
+    pipeline -->|save_serving_artifacts| pkl
 
     selector --> pytorch
     selector --> prepared
@@ -60,11 +83,28 @@ graph TB
     preprocessor --> imblearn
     evaluator --> sklearn
 
+    tracking --> store
+    tracking --> registry
+
+    serve --> api
+    api --> schemas
+    api --> loader
+    api --> artifacts
+    api --> scoring
+    loader -->|models:/name/Production| registry
+    loader -->|unpickle| pkl
+    artifacts --> features
+    artifacts --> sklearn
+
     config -.- dvc
     dvc --- gdrive
 
     style pipeline fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
     style config fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     style train fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style serve fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style promote fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style api fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    style artifacts fill:#fff8e1,stroke:#ff8f00,stroke-width:2px
     style lstm fill:#fce4ec,stroke:#c62828
     style tabnet fill:#f3e5f5,stroke:#7b1fa2

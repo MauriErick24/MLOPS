@@ -4,7 +4,7 @@ from loguru import logger
 import mlflow
 import typer
 
-app = typer.Typer(help="Fraud Detection MLOps CLI — train, compare, promote.")
+app = typer.Typer(help="Fraud Detection MLOps CLI — train, compare, promote, serve.")
 
 
 @app.command()
@@ -32,6 +32,7 @@ def train(
     pipeline.select_features()
     pipeline.train()
     results = pipeline.evaluate()
+    pipeline.save_serving_artifacts()
 
     for name, result in results.items():
         logger.info(f"{name}: F1={result['f1']:.4f}, ROI={result['roi']:.2f}%")
@@ -94,6 +95,19 @@ def compare(
     config = ExperimentConfig(mlflow_experiment_name=experiment)
     trainer = MLflowFraudTrainer(config)
     trainer.compare_runs()
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="Interfaz de escucha"),
+    port: int = typer.Option(8000, help="Puerto HTTP"),
+    reload: bool = typer.Option(False, help="Recarga automatica para desarrollo"),
+):
+    """Levanta la API de inferencia sobre el modelo en Production."""
+    import uvicorn
+
+    logger.info(f"Documentacion interactiva en http://{host}:{port}/docs")
+    uvicorn.run("deteccion_fraude.api.app:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

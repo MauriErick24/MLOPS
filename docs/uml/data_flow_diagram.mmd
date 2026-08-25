@@ -11,17 +11,17 @@ graph LR
         C -->|"FraudFeatureEngineer.transform"| D["DataFrame<br/>+22 engineered features<br/>50 -> 50 cols"]
     end
 
-    subgraph "Step 4: Scaling and SMOTE"
-        D -->|"RobustScaler + StandardScaler"| E["Scaled DataFrame"]
-        E -->|"SMOTE ratio=0.30"| F["PreparedData<br/>X_train: N*50<br/>X_balanced: M*50<br/>X_validation: 42K*50<br/>X_test: 42K*50"]
+    subgraph "Step 4: Scaling"
+        D -->|"RobustScaler + StandardScaler<br/>fit solo en train"| E["Scaled DataFrame"]
+        E --> F["PreparedData<br/>X_train: 198K*50<br/>X_validation: 42K*50<br/>X_test: 42K*50<br/>+ AmountStats"]
     end
 
     subgraph "Step 5: Feature Selection"
         F -->|"TabNetFeatureSelector"| G["PreparedData filtered<br/>X_train: N*50 to N*50<br/>X_train_lstm: N*30<br/>selected: top-N features"]
     end
 
-    subgraph "Step 6: Train Models"
-        G -->|"LSTMDetector.fit"| H["LSTM Model<br/>BiLSTM 64-32 + FocalLoss<br/>sequences of 5"]
+    subgraph "Step 6: Train Models (SMOTE ratio=0.30 solo en train)"
+        G -->|"LSTMDetector.fit"| H["LSTM Model<br/>BiLSTM 64-32 + focal loss<br/>sequences of 5"]
         G -->|"TabNetDetector.fit"| I["TabNet Model<br/>n_d=32, n_a=32<br/>n_steps=5, gamma=1.3"]
     end
 
@@ -32,8 +32,19 @@ graph LR
         K -->|"FraudModelEvaluator"| L
     end
 
-    subgraph "Step 8: Save"
-        L -->|"pickle"| M["models/results.pkl<br/>models/selected_features.pkl<br/>models/scalers.pkl"]
+    subgraph "Step 8: Save and Register"
+        H -->|"save"| M["models/lstm_fraud_detector.keras"]
+        I -->|"save"| M2["models/tabnet_fraud_detector.zip"]
+        L -->|"save_serving_artifacts"| M3["models/serving_artifacts.pkl<br/>scalers + noise_mask + thresholds<br/>+ selected_features + AmountStats"]
+        L -->|"log_to_mlflow"| M4["mlflow.db<br/>params, metrics, tags,<br/>modelos y figuras"]
+    end
+
+    subgraph "Step 9: Promote and Serve"
+        M4 -->|"fraude promote"| N["Model Registry<br/>fraud_tabnet stage=Production"]
+        N --> O["FastAPI<br/>POST /predict"]
+        M3 --> O
+        P["Transaccion cruda<br/>Time, V1-V28, Amount"] --> O
+        O --> Q["Veredicto<br/>probabilidad, umbral por ROI,<br/>high_risk_flag"]
     end
 
     style A fill:#ffecb3,stroke:#f9a825
@@ -43,3 +54,9 @@ graph LR
     style I fill:#f3e5f5,stroke:#7b1fa2
     style L fill:#e8f5e9,stroke:#388e3c
     style M fill:#eceff1,stroke:#546e6a
+    style M2 fill:#eceff1,stroke:#546e6a
+    style M3 fill:#fff8e1,stroke:#ff8f00
+    style M4 fill:#eceff1,stroke:#546e6a
+    style N fill:#e1f5fe,stroke:#0288d1
+    style O fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    style Q fill:#e8f5e9,stroke:#388e3c

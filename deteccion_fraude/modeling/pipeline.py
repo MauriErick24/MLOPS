@@ -1,5 +1,7 @@
 """Fachada orientada a objetos para el experimento completo."""
 
+from pathlib import Path
+
 import numpy as np
 import tensorflow as tf
 import torch
@@ -10,6 +12,7 @@ from deteccion_fraude.evaluation import FraudModelEvaluator
 from deteccion_fraude.modeling.feature_selection import TabNetFeatureSelector
 from deteccion_fraude.modeling.lstm import LSTMDetector
 from deteccion_fraude.modeling.tabnet import TabNetDetector
+from deteccion_fraude.serving import ServingArtifacts
 from deteccion_fraude.tracking import MLflowFraudTrainer
 
 
@@ -68,6 +71,15 @@ class FraudDetectionPipeline:
             self.results[name] = result
         self.y_test_aligned = y_test
         return self.results
+
+    def save_serving_artifacts(self) -> Path:
+        """Persiste scalers, mascara de ruido y umbrales para la API de inferencia."""
+        if not self.results:
+            raise RuntimeError("Ejecute evaluate() antes de guardar artefactos de inferencia.")
+        artifacts = ServingArtifacts.from_training(
+            self.config, self.data, self.selector, self.results
+        )
+        return artifacts.save(self.config.models_dir)
 
     def log_to_mlflow(self, run_name: str = "fraud_detection_pipeline") -> str:
         """Registra todo el experimento en MLflow."""
