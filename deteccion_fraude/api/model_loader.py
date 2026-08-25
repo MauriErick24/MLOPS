@@ -14,6 +14,10 @@ import mlflow.pyfunc
 import mlflow.sklearn
 
 from deteccion_fraude.config import MODELS_DIR, PROJ_ROOT, ExperimentConfig
+from deteccion_fraude.modeling.lstm import (  # noqa: F401 – registra la loss en Keras
+    FocalLoss,
+    focal_loss,
+)
 from deteccion_fraude.serving import ScoringModel, ServingArtifacts
 
 #: Modelos que `fraude promote` puede registrar, en orden de preferencia.
@@ -104,7 +108,7 @@ def load_model() -> ScoringModel | None:
         if kind == "tabnet":
             model = mlflow.sklearn.load_model(uri)
         elif kind == "lstm":
-            model = mlflow.keras.load_model(uri)
+            model = mlflow.keras.load_model(uri, custom_objects={"focal_loss": focal_loss, "focal_loss_fn": focal_loss})
         else:
             model = mlflow.pyfunc.load_model(uri)
     except Exception as error:  # noqa: BLE001 - ante cualquier flavor, degradar a pyfunc
