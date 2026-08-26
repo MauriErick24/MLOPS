@@ -429,7 +429,64 @@ print(f"MLflow run: {run_id}")
 
 ---
 
-## 12. CI/CD (GitHub Actions)
+## 12. Ejecucion con Docker Compose
+
+La entrega Docker usa una imagen CPU comun y tres servicios:
+
+- `mlflow`: servidor de tracking y Model Registry en el puerto 5000;
+- `trainer`: job manual de entrenamiento y promocion;
+- `api`: servicio FastAPI en el puerto 8000.
+
+Los datos no se copian a la imagen. Descarguelos primero en el host y asegurese
+de que Docker Desktop este activo:
+
+```bash
+dvc pull
+docker compose build
+docker compose up -d mlflow
+```
+
+Ejecute el entrenamiento y la promocion explicitamente. `trainer` pertenece al
+perfil `jobs`, por lo que no se inicia accidentalmente con `docker compose up`:
+
+```bash
+docker compose run --rm trainer fraude train
+docker compose run --rm trainer fraude promote
+docker compose up -d api
+docker compose ps
+```
+
+Verifique los servicios en `http://localhost:5000` y
+`http://localhost:8000/docs`. La API carga el modelo una sola vez al arrancar;
+despues de cada promocion ejecute:
+
+```bash
+docker compose restart api
+```
+
+Para ejecutar la suite dentro de la imagen:
+
+```bash
+docker compose run --rm trainer pytest tests -v
+```
+
+Compose conserva la base de MLflow, artifacts, modelos y reportes en volumenes.
+El directorio `./data` se monta como solo lectura. No incluya `.env`, credenciales
+de Google Drive, datasets ni archivos `pickle` externos en la imagen.
+
+Para fijar el modelo servido en PowerShell:
+
+```powershell
+$env:FRAUD_MODEL_NAME="fraud_tabnet"  # tambien acepta fraud_lstm
+docker compose up -d api
+```
+
+El valor predeterminado es `auto`. Si la API se inicia antes de entrenar y
+promover, `/health` devolvera 503 y el contenedor aparecera como `unhealthy`.
+
+---
+
+## 13. CI/CD (GitHub Actions)
 
 ```yaml
 # .github/workflows/ci.yml
@@ -471,7 +528,7 @@ jobs:
 
 ---
 
-## 13. Solucion de problemas
+## 14. Solucion de problemas
 
 ### Error: TensorFlow no encuentra GPU
 ```bash

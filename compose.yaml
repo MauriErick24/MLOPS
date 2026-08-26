@@ -1,0 +1,102 @@
+name: deteccion-fraude
+
+x-app-environment: &app-environment
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  FRAUD_PROJECT_ROOT: /app
+
+x-app-service: &app-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: deteccion-fraude:local
+  init: true
+  environment: *app-environment
+  networks:
+    - fraud-network
+
+services:
+  mlflow:
+    <<: *app-service
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - sqlite:////mlflow/db/mlflow.db
+      - --artifacts-destination
+      - /mlflow/artifacts
+      - --serve-artifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-db:/mlflow/db
+      - mlflow-artifacts:/mlflow/artifacts
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  trainer:
+    <<: *app-service
+    profiles:
+      - jobs
+    command:
+      - fraude
+      - --help
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+      - model-cache:/app/models
+      - reports:/app/reports
+
+  api:
+    <<: *app-service
+    command:
+      - fraude
+      - serve
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      <<: *app-environment
+      FRAUD_MODEL_NAME: ${FRAUD_MODEL_NAME:-auto}
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - model-cache:/app/models:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  fraud-network:
+
+volumes:
+  mlflow-db:
+  mlflow-artifacts:
+  model-cache:
+  reports:

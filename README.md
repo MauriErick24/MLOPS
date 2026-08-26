@@ -35,6 +35,35 @@ Swagger UI en `http://127.0.0.1:8000/docs`.
 Guia completa en [GUIA_EJECUCION.md](GUIA_EJECUCION.md), diseno en
 [ARQUITECTURA.md](ARQUITECTURA.md).
 
+## Docker Compose
+
+Requiere Docker Desktop activo y `data/raw/creditcard.csv` descargado previamente
+con `dvc pull`. La imagen es CPU y no incorpora datos, modelos ni secretos.
+
+```bash
+docker compose build
+docker compose up -d mlflow
+
+# Job manual: puede tardar considerablemente en CPU
+docker compose run --rm trainer fraude train
+docker compose run --rm trainer fraude promote
+
+docker compose up -d api
+docker compose ps
+```
+
+MLflow queda en `http://localhost:5000` y Swagger en
+`http://localhost:8000/docs`. Despues de promover una nueva version:
+
+```bash
+docker compose restart api
+```
+
+Los runs, artifacts, modelos y reportes se conservan en volumenes. El dataset se
+monta desde `./data` como solo lectura. Para elegir explicitamente un modelo se
+puede definir `FRAUD_MODEL_NAME=fraud_tabnet` o `fraud_lstm`; el valor por defecto
+es `auto`.
+
 ## Comandos
 
 | Comando | Descripcion |
@@ -44,7 +73,7 @@ Guia completa en [GUIA_EJECUCION.md](GUIA_EJECUCION.md), diseno en
 | `fraude promote` | Promueve el mejor modelo a Production en el Registry |
 | `fraude serve` | Levanta la API FastAPI sobre el modelo en Production |
 | `mlflow ui --backend-store-uri sqlite:///mlflow.db` | UI de MLflow |
-| `pytest tests/ -v` | Suite de tests (33) |
+| `pytest tests/ -v` | Suite de tests (34) |
 
 ## Project Organization
 
