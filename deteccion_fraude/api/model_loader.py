@@ -5,6 +5,7 @@ dependa de detalles de MLflow.
 """
 
 import os
+import tempfile
 
 from loguru import logger
 import mlflow
@@ -137,11 +138,36 @@ def get_model_metadata() -> dict[str, str]:
 
 
 def load_artifacts() -> ServingArtifacts | None:
-    """Carga el preprocesamiento persistido por el entrenamiento."""
+    """Carga el preprocesamiento desde los artifacts del run en MLflow.
+
+    Si no existe en MLflow (modelos viejos), fallback a models/serving_artifacts.pkl.
+    """
+    from pathlib import Path
+
+    run_id = _metadata.get("run_id", "Desconocido")
+    if run_id and run_id != "Desconocido":
+        try:
+            client = mlflow.tracking.MlflowClient()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                local_path = client.download_artifacts(
+                    run_id, "serving/serving_artifacts.pkl", tmpdir
+                )
+                artifacts = ServingArtifacts.load(Path(local_path).parent)
+                logger.info(
+                    f"Artefactos de inferencia cargados desde MLflow run {run_id} "
+                    f"({len(artifacts.feature_names)} features)."
+                )
+                return artifacts
+        except Exception as error:  # noqa: BLE001 - fallback ante cualquier error de MLflow
+            logger.warning(
+                f"Artifact 'serving/serving_artifacts.pkl' no encontrado en MLflow run {run_id}: {error}; "
+                "intentando carga local."
+            )
+
     try:
         artifacts = ServingArtifacts.load(MODELS_DIR)
     except Exception as error:  # noqa: BLE001 - la API arranca aunque falten artefactos
         logger.error(f"No se pudieron cargar los artefactos de inferencia: {error}")
         return None
-    logger.info(f"Artefactos de inferencia cargados ({len(artifacts.feature_names)} features).")
+    logger.info(f"Artefactos de inferencia cargados localmente ({len(artifacts.feature_names)} features).")
     return artifacts

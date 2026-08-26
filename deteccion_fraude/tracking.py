@@ -1,5 +1,6 @@
 """MLflow tracking, lineage y serving para deteccion de fraude."""
 
+from pathlib import Path
 import subprocess
 
 from loguru import logger
@@ -91,6 +92,7 @@ class MLflowFraudTrainer:
         data,
         results: dict,
         run_name: str = "fraud_detection_pipeline",
+        serving_artifacts_path: Path | None = None,
     ) -> str:
         """Registra un run completo con ambos modelos en MLflow."""
         lineage = get_lineage_metadata()
@@ -164,6 +166,9 @@ class MLflowFraudTrainer:
             ):
                 if artifact_path.exists():
                     mlflow.log_artifact(str(artifact_path), artifact_path="figures")
+
+            if serving_artifacts_path and serving_artifacts_path.exists():
+                mlflow.log_artifact(str(serving_artifacts_path), artifact_path="serving")
 
             run_id = run.info.run_id
             logger.info(f"MLflow run completado: {run_id}")

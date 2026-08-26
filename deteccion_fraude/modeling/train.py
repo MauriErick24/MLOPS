@@ -32,7 +32,7 @@ def train(
     pipeline.select_features()
     pipeline.train()
     results = pipeline.evaluate()
-    pipeline.save_serving_artifacts()
+    artifacts_path = pipeline.save_serving_artifacts()
 
     for name, result in results.items():
         logger.info(f"{name}: F1={result['f1']:.4f}, ROI={result['roi']:.2f}%")
@@ -47,7 +47,7 @@ def train(
         visualizer.plot_confusion_matrix(result["cm"], name)
     visualizer.plot_results_summary(results)
 
-    run_id = pipeline.log_to_mlflow(run_name=run_name)
+    run_id = pipeline.log_to_mlflow(run_name=run_name, serving_artifacts_path=artifacts_path)
     logger.success(f"Entrenamiento completo. MLflow run: {run_id}")
 
 
