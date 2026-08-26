@@ -81,8 +81,9 @@ class FraudDetectionPipeline:
         )
         return artifacts.save(self.config.models_dir)
 
-    def log_to_mlflow(self, run_name: str = "fraud_detection_pipeline") -> str:
+    def log_to_mlflow(self, run_name: str = "fraud_detection_pipeline", serving_artifacts_path: Path | None = None) -> str:
         """Registra todo el experimento en MLflow."""
         return self.trainer.log_training(
-            self.lstm, self.tabnet, self.data, self.results, run_name=run_name
+            self.lstm, self.tabnet, self.data, self.results,
+            run_name=run_name, serving_artifacts_path=serving_artifacts_path,
         )
