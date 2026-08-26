@@ -49,3 +49,8 @@ def test_split_sorted_by_time():
     splits = FraudDataset.split(df, config)
     for part in (splits.df_train, splits.df_val, splits.df_test):
         assert list(part["Time"]) == sorted(part["Time"])
+
+
+def test_config_reads_mlflow_tracking_uri_from_environment(monkeypatch):
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    assert ExperimentConfig().mlflow_tracking_uri == "http://mlflow:5000"

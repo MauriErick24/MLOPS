@@ -3,10 +3,13 @@
 Sigue la ubicacion de Cookiecutter Data Science v2.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
-PROJ_ROOT = Path(__file__).resolve().parents[1]
+PROJ_ROOT = Path(
+    os.getenv("FRAUD_PROJECT_ROOT", str(Path(__file__).resolve().parents[1]))
+).resolve()
 DATA_DIR = PROJ_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
@@ -39,7 +42,9 @@ class ExperimentConfig:
     false_negative_cost: float = 150.0
     false_positive_cost: float = 25.0
     min_lstm_features: int = 30
-    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
+    mlflow_tracking_uri: str = field(
+        default_factory=lambda: os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+    )
     mlflow_experiment_name: str = "deteccion_fraude"
 
     @property

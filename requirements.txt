@@ -25,4 +25,4 @@ tensorflow>=2.15,<2.19
 torch>=2.0,<3.0
 tqdm
 typer
--e .
+mypy

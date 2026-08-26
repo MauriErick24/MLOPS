@@ -2,7 +2,7 @@ name: fraud_detection
 python_env: python_env.yaml
 entry_points:
   main:
-    command: "python -m deteccion_fraude.modeling.train"
+    command: "python -m deteccion_fraude.modeling.train train --experiment {experiment} --run-name {run_name}"
     parameters:
       experiment:
         type: str
@@ -12,13 +12,8 @@ entry_points:
         type: str
         default: "fraud_detection_pipeline"
         description: "Nombre del run"
-      promote:
-        type: bool
-        default: false
-        description: "Promover mejor modelo a Production"
-
   compare:
-    command: "python -m deteccion_fraude.modeling.train compare"
+    command: "python -m deteccion_fraude.modeling.train compare --experiment {experiment}"
     parameters:
       experiment:
         type: str
@@ -45,6 +40,6 @@ entry_points:
         default: "127.0.0.1"
         description: "Interfaz de escucha de la API"
       port:
-        type: str
-        default: "8000"
+        type: int
+        default: 8000
         description: "Puerto HTTP de la API"

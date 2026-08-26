@@ -309,6 +309,7 @@ $env:FRAUD_MODEL_NAME="fraud_lstm"     # Windows PowerShell
 ---
 
 ## 7. Ejecucion de tests
+La cantidad de tests puede cambiar según las pruebas agregadas. La ejecución debe terminar con todos los tests en estado `PASSED`.
 
 ```bash
 python -m pytest tests/ -v
@@ -429,7 +430,97 @@ print(f"MLflow run: {run_id}")
 
 ---
 
-## 12. CI/CD (GitHub Actions)
+## 12. Ejecucion con Docker Compose
+
+La entrega Docker usa una imagen CPU comun y tres servicios:
+
+- `mlflow`: servidor de tracking y Model Registry en el puerto 5000;
+- `trainer`: job manual de entrenamiento y promocion;
+- `api`: servicio FastAPI en el puerto 8000.
+
+Los datos no se copian a la imagen. Descarguelos primero en el host y asegurese
+de que Docker Desktop este activo:
+
+```bash
+dvc pull
+docker compose build
+docker compose up -d mlflow
+```
+
+Ejecute el entrenamiento y la promocion explicitamente. `trainer` pertenece al
+perfil `jobs`, por lo que no se inicia accidentalmente con `docker compose up`:
+
+```bash
+docker compose run --rm trainer fraude train
+docker compose run --rm trainer fraude promote
+docker compose up -d api
+docker compose ps
+```
+
+Verifique los servicios en `http://localhost:5000` y
+`http://localhost:8000/docs`. La API carga el modelo una sola vez al arrancar;
+despues de cada promocion ejecute:
+
+```bash
+docker compose restart api
+```
+
+Para ejecutar la suite dentro de la imagen:
+
+```bash
+docker compose run --rm trainer pytest tests -v
+```
+
+### Persistencia de datos Docker
+
+Compose guarda la base de MLflow, los artifacts, los modelos y los reportes en volumenes nombrados. Estos datos no aparecen directamente en las carpetas locales `models/`, `reports/` o en `mlflow.db`.
+
+No ejecute `docker compose down -v` salvo que desee eliminar tambien los
+volumenes y, por tanto, los datos persistidos. `docker compose down` detiene y elimina los contenedores, pero conserva los volumenes.
+
+Para consultar los volumenes asociados al proyecto:
+
+```bash
+docker volume ls
+docker compose config --volumes
+```
+El nombre real suele incluir el prefijo del proyecto Compose, por ejemplo
+`deteccion-fraude_mlflow-db`. Utilice exactamente el nombre mostrado por
+`docker volume ls`.
+
+
+Para inspeccionar un volumen especifico, use el nombre real mostrado por
+`docker volume ls`. Con la configuracion actual, normalmente seran:
+
+```bash
+docker volume inspect deteccion-fraude_mlflow-db
+docker volume inspect deteccion-fraude_mlflow-artifacts
+docker volume inspect deteccion-fraude_model-cache
+docker volume inspect deteccion-fraude_reports
+```
+
+El directorio `./data` se monta como solo lectura. No incluya `.env`, credenciales de Google Drive, datasets ni archivos `pickle` externos en la imagen.
+
+Para fijar el modelo servido en PowerShell:
+
+```powershell
+$env:FRAUD_MODEL_NAME="fraud_tabnet"  # tambien acepta fraud_lstm
+docker compose up -d api
+```
+
+El valor predeterminado es `auto`. Si la API se inicia antes de entrenar y
+promover, `/health` devolvera 503 y el contenedor aparecera como `unhealthy`.
+
+El prefijo deteccion-fraude puede cambiar si se ejecuta Compose con otro
+nombre de proyecto.
+
+Para detener los servicios conservando los datos:
+```bash
+docker compose down
+```
+---
+
+## 13. CI/CD (GitHub Actions)
 
 ```yaml
 # .github/workflows/ci.yml
@@ -466,12 +557,20 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pip install -e .
       - run: fraude train --experiment "ci-${{ github.sha }}"
-      - run: fraude promote
+      - run: fraude promote --experiment "ci-${{ github.sha }}"
 ```
 
+Si usas el experimento predeterminado:
+```yaml
+docker compose run --rm trainer fraude promote
+```
+Si entrenaste con otro experimento, debes especificarlo:
+```yaml
+docker compose run --rm trainer fraude promote --experiment v2
+```
 ---
 
-## 13. Solucion de problemas
+## 14. Solucion de problemas
 
 ### Error: TensorFlow no encuentra GPU
 ```bash
