@@ -309,6 +309,7 @@ $env:FRAUD_MODEL_NAME="fraud_lstm"     # Windows PowerShell
 ---
 
 ## 7. Ejecucion de tests
+La cantidad de tests puede cambiar según las pruebas agregadas. La ejecución debe terminar con todos los tests en estado `PASSED`.
 
 ```bash
 python -m pytest tests/ -v
@@ -470,9 +471,35 @@ Para ejecutar la suite dentro de la imagen:
 docker compose run --rm trainer pytest tests -v
 ```
 
-Compose conserva la base de MLflow, artifacts, modelos y reportes en volumenes.
-El directorio `./data` se monta como solo lectura. No incluya `.env`, credenciales
-de Google Drive, datasets ni archivos `pickle` externos en la imagen.
+### Persistencia de datos Docker
+
+Compose guarda la base de MLflow, los artifacts, los modelos y los reportes en volumenes nombrados. Estos datos no aparecen directamente en las carpetas locales `models/`, `reports/` o en `mlflow.db`.
+
+No ejecute `docker compose down -v` salvo que desee eliminar tambien los
+volumenes y, por tanto, los datos persistidos. `docker compose down` detiene y elimina los contenedores, pero conserva los volumenes.
+
+Para consultar los volumenes asociados al proyecto:
+
+```bash
+docker volume ls
+docker compose config --volumes
+```
+El nombre real suele incluir el prefijo del proyecto Compose, por ejemplo
+`deteccion-fraude_mlflow-db`. Utilice exactamente el nombre mostrado por
+`docker volume ls`.
+
+
+Para inspeccionar un volumen especifico, use el nombre real mostrado por
+`docker volume ls`. Con la configuracion actual, normalmente seran:
+
+```bash
+docker volume inspect deteccion-fraude_mlflow-db
+docker volume inspect deteccion-fraude_mlflow-artifacts
+docker volume inspect deteccion-fraude_model-cache
+docker volume inspect deteccion-fraude_reports
+```
+
+El directorio `./data` se monta como solo lectura. No incluya `.env`, credenciales de Google Drive, datasets ni archivos `pickle` externos en la imagen.
 
 Para fijar el modelo servido en PowerShell:
 
@@ -484,6 +511,13 @@ docker compose up -d api
 El valor predeterminado es `auto`. Si la API se inicia antes de entrenar y
 promover, `/health` devolvera 503 y el contenedor aparecera como `unhealthy`.
 
+El prefijo deteccion-fraude puede cambiar si se ejecuta Compose con otro
+nombre de proyecto.
+
+Para detener los servicios conservando los datos:
+```bash
+docker compose down
+```
 ---
 
 ## 13. CI/CD (GitHub Actions)
@@ -523,9 +557,17 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pip install -e .
       - run: fraude train --experiment "ci-${{ github.sha }}"
-      - run: fraude promote
+      - run: fraude promote --experiment "ci-${{ github.sha }}"
 ```
 
+Si usas el experimento predeterminado:
+```yaml
+docker compose run --rm trainer fraude promote
+```
+Si entrenaste con otro experimento, debes especificarlo:
+```yaml
+docker compose run --rm trainer fraude promote --experiment v2
+```
 ---
 
 ## 14. Solucion de problemas
