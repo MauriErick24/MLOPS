@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from deteccion_fraude.config import ExperimentConfig
-from deteccion_fraude.features import FraudFeatureEngineer
+from deteccion_fraude.features import AmountStats, FraudFeatureEngineer
 
 
 def sample_dataframe(rows=20):
@@ -27,3 +28,12 @@ def test_feature_engineer_does_not_mutate_input():
     before = original.copy(deep=True)
     FraudFeatureEngineer(ExperimentConfig()).transform(original)
     pd.testing.assert_frame_equal(original, before)
+
+
+def test_amount_stats_are_computed_from_dataframe():
+    dataframe = sample_dataframe()
+    stats = AmountStats.from_dataframe(dataframe)
+
+    assert stats.mean == pytest.approx(dataframe["Amount"].mean())
+    assert stats.std == pytest.approx(dataframe["Amount"].std(ddof=0))
+    assert len(stats.log_bin_edges) == 11
