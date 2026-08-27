@@ -192,7 +192,12 @@ class MLflowFraudTrainer:
             return eval_result.metrics
 
     def promote_best_model(self, run_id: str, metric: str = "f1") -> str:
-        """Selecciona el mejor modelo y lo promueve a Production."""
+        """Selecciona el mejor modelo y lo promueve a Production.
+
+        Es idempotente por run: si el run ganador ya tiene una version registrada
+        para ese modelo, se reutiliza en vez de crear una version nueva. Solo se
+        crea version cuando el `run_id` es distinto (modelo reentrenado).
+        """
         client = mlflow.tracking.MlflowClient()
         run = client.get_run(run_id)
         lstm_metric = run.data.metrics.get(f"lstm_{metric}", 0)
@@ -207,16 +212,40 @@ class MLflowFraudTrainer:
         except mlflow.exceptions.MlflowException:
             client.create_registered_model(model_name)
 
-        result = client.create_model_version(
-            name=model_name,
-            source=model_uri,
-            run_id=run_id,
-        )
+        existing = None
+        try:
+            versions = client.search_model_versions(f"name='{model_name}'")
+            existing = next((v for v in versions if v.run_id == run_id), None)
+        except mlflow.exceptions.MlflowException:
+            existing = None
+
+        if existing is not None:
+            result = existing
+        else:
+            result = mlflow.register_model(
+                model_uri=model_uri,
+                name=model_name,
+            )
         client.transition_model_version_stage(
             name=model_name,
             version=result.version,
             stage="Production",
+            archive_existing_versions=True,
         )
+
+        loser = "tabnet" if winner == "lstm" else "lstm"
+        loser_name = f"fraud_{loser}"
+        try:
+            loser_versions = client.get_latest_versions(loser_name, stages=["Production"])
+        except mlflow.exceptions.MlflowException:
+            loser_versions = []
+        for loser_version in loser_versions:
+            client.transition_model_version_stage(
+                name=loser_name,
+                version=loser_version.version,
+                stage="Archived",
+            )
+
         logger.info(
             f"Modelo ganador: {winner} ({metric}={max(lstm_metric, tabnet_metric):.4f}) "
             f"— version {result.version} en Production"

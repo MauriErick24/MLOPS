@@ -210,6 +210,128 @@ def test_promote_best_model_creates_registered_model_on_first_run(mock_lineage, 
     client.create_registered_model.assert_called_once()
 
 
+@patch("deteccion_fraude.tracking.mlflow")
+@patch("deteccion_fraude.tracking.get_lineage_metadata")
+def test_promote_best_model_archives_existing_versions_of_same_model(mock_lineage, mock_mlflow):
+    mock_lineage.return_value = {"git_commit": "abc"}
+    config = ExperimentConfig()
+    trainer = MLflowFraudTrainer(config)
+
+    client = MagicMock()
+    mock_mlflow.tracking.MlflowClient.return_value = client
+    run = MagicMock()
+    run.data.metrics = {"lstm_f1": 0.9, "tabnet_f1": 0.7}
+    client.get_run.return_value = run
+
+    wrapper = MagicMock()
+    wrapper.version = "2"
+    mock_mlflow.register_model.return_value = wrapper
+
+    trainer.promote_best_model("run_123")
+
+    winner_call = [
+        call
+        for call in client.transition_model_version_stage.call_args_list
+        if call.kwargs["name"] == "fraud_lstm"
+    ]
+    assert winner_call
+    assert winner_call[0].kwargs["archive_existing_versions"] is True
+
+
+@patch("deteccion_fraude.tracking.mlflow")
+@patch("deteccion_fraude.tracking.get_lineage_metadata")
+def test_promote_best_model_archives_the_losing_model(mock_lineage, mock_mlflow):
+    mock_lineage.return_value = {"git_commit": "abc"}
+    config = ExperimentConfig()
+    trainer = MLflowFraudTrainer(config)
+
+    client = MagicMock()
+    mock_mlflow.tracking.MlflowClient.return_value = client
+    run = MagicMock()
+    run.data.metrics = {"lstm_f1": 0.5, "tabnet_f1": 0.8}
+    client.get_run.return_value = run
+
+    wrapper = MagicMock()
+    wrapper.version = "3"
+    mock_mlflow.register_model.return_value = wrapper
+
+    loser_version = MagicMock()
+    loser_version.version = "1"
+    client.get_latest_versions.return_value = [loser_version]
+
+    winner = trainer.promote_best_model("run_456")
+    assert winner == "tabnet"
+
+    client.get_latest_versions.assert_called_once_with("fraud_lstm", stages=["Production"])
+    loser_call = [
+        call
+        for call in client.transition_model_version_stage.call_args_list
+        if call.kwargs["name"] == "fraud_lstm" and call.kwargs["stage"] == "Archived"
+    ]
+    assert loser_call
+    assert loser_call[0].kwargs["version"] == "1"
+
+
+@patch("deteccion_fraude.tracking.mlflow")
+@patch("deteccion_fraude.tracking.get_lineage_metadata")
+def test_promote_best_model_reuses_version_for_same_run_id(mock_lineage, mock_mlflow):
+    mock_lineage.return_value = {"git_commit": "abc"}
+    config = ExperimentConfig()
+    trainer = MLflowFraudTrainer(config)
+
+    client = MagicMock()
+    mock_mlflow.tracking.MlflowClient.return_value = client
+    run = MagicMock()
+    run.data.metrics = {"lstm_f1": 0.9, "tabnet_f1": 0.7}
+    client.get_run.return_value = run
+
+    existing = MagicMock()
+    existing.run_id = "run_123"
+    existing.version = "3"
+    client.search_model_versions.return_value = [existing]
+
+    winner = trainer.promote_best_model("run_123")
+    assert winner == "lstm"
+
+    client.create_model_version.assert_not_called()
+    mock_mlflow.register_model.assert_not_called()
+    winner_call = [
+        call
+        for call in client.transition_model_version_stage.call_args_list
+        if call.kwargs["name"] == "fraud_lstm" and call.kwargs["stage"] == "Production"
+    ]
+    assert winner_call
+    assert winner_call[0].kwargs["version"] == "3"
+
+
+@patch("deteccion_fraude.tracking.mlflow")
+@patch("deteccion_fraude.tracking.get_lineage_metadata")
+def test_promote_best_model_creates_new_version_for_new_run_id(mock_lineage, mock_mlflow):
+    mock_lineage.return_value = {"git_commit": "abc"}
+    config = ExperimentConfig()
+    trainer = MLflowFraudTrainer(config)
+
+    client = MagicMock()
+    mock_mlflow.tracking.MlflowClient.return_value = client
+    run = MagicMock()
+    run.data.metrics = {"lstm_f1": 0.9, "tabnet_f1": 0.7}
+    client.get_run.return_value = run
+
+    existing_other = MagicMock()
+    existing_other.run_id = "run_anterior"
+    existing_other.version = "3"
+    client.search_model_versions.return_value = [existing_other]
+
+    wrapper = MagicMock()
+    wrapper.version = "4"
+    mock_mlflow.register_model.return_value = wrapper
+
+    winner = trainer.promote_best_model("run_nuevo")
+    assert winner == "lstm"
+
+    mock_mlflow.register_model.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # MLflowFraudTrainer — compare_runs
 # ---------------------------------------------------------------------------
