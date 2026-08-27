@@ -116,3 +116,33 @@ def test_transaction_requires_all_pca_components():
     del row["V14"]
     with pytest.raises(ValidationError):
         Transaction(**row)
+
+
+def test_transaction_accepts_zero_for_time_and_amount():
+    transaction = Transaction(**_raw_transaction(Time=0, Amount=0))
+
+    assert transaction.time == 0
+    assert transaction.amount == 0
+
+
+def test_transaction_serializes_using_dataset_aliases():
+    transaction = Transaction(**_raw_transaction())
+
+    serialized = transaction.model_dump(by_alias=True)
+
+    assert serialized["Time"] == 0.0
+    assert serialized["Amount"] == 149.62
+    assert serialized["V28"] == 0.1
+
+
+def test_prediction_response_preserves_lstm_scored_offset():
+    response = PredictionResponse(
+        model_metadata=_metadata(),
+        decision_threshold=0.5,
+        total_predictions=2,
+        scored_from_index=4,
+        results=[_prediction()],
+        message="ok",
+    )
+
+    assert response.scored_from_index == 4
