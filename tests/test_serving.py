@@ -58,6 +58,14 @@ class StubLSTM:
         return np.full((len(windows), 1), 0.7)
 
 
+class StubPyFunc:
+    def __init__(self, output):
+        self.output = output
+
+    def predict(self, features):
+        return self.output
+
+
 def test_build_matrix_returns_selected_feature_columns():
     artifacts = build_artifacts()
     matrix = artifacts.build_matrix(raw_transactions(rows=30))
@@ -127,6 +135,41 @@ def test_threshold_falls_back_when_model_missing():
     artifacts = build_artifacts()
     assert artifacts.threshold_for("tabnet") == pytest.approx(0.42)
     assert artifacts.threshold_for("pyfunc") == pytest.approx(0.5)
+
+
+def test_scoring_model_returns_tabnet_fraud_probability():
+    scorer = ScoringModel(kind="tabnet", model=StubTabNet())
+
+    probabilities = scorer.score(np.zeros((3, 2)))
+
+    np.testing.assert_allclose(probabilities, [0.1, 0.5, 0.9])
+
+
+def test_scoring_model_extracts_probability_dataframe_column():
+    output = pd.DataFrame({"probability": [0.2, 0.8], "prediction": [0, 1]})
+    scorer = ScoringModel(kind="pyfunc", model=StubPyFunc(output))
+
+    probabilities = scorer.score(np.zeros((2, 2)))
+
+    np.testing.assert_allclose(probabilities, [0.2, 0.8])
+
+
+def test_scoring_model_extracts_positive_class_from_two_column_array():
+    output = np.array([[0.9, 0.1], [0.25, 0.75]])
+    scorer = ScoringModel(kind="pyfunc", model=StubPyFunc(output))
+
+    probabilities = scorer.score(np.zeros((2, 2)))
+
+    np.testing.assert_allclose(probabilities, [0.1, 0.75])
+
+
+def test_scoring_model_flattens_one_column_output():
+    output = np.array([[0.3], [0.6]])
+    scorer = ScoringModel(kind="pyfunc", model=StubPyFunc(output))
+
+    probabilities = scorer.score(np.zeros((2, 2)))
+
+    np.testing.assert_allclose(probabilities, [0.3, 0.6])
 
 
 def test_artifacts_roundtrip_through_disk(tmp_path):
