@@ -33,3 +33,11 @@ extend-select = ["I"]  # Add import sorting
 known-first-party = ["deteccion_fraude"]
 force-sort-within-sections = true
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:pytorch_tabnet.*",
+    "ignore::DeprecationWarning:scipy.*",
+    "ignore::DeprecationWarning:mlflow.*",
+    "ignore::DeprecationWarning:pydantic.*",
+]
+
